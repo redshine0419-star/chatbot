@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 
-export const dynamic = 'force-dynamic';
-
 const SERVICES = [
   { key: 'marketerops', url: 'https://growweb.me/api/stats' },
   { key: 'flavorsync', url: 'https://flavorsync.me/api/stats' },
@@ -12,7 +10,7 @@ const SERVICES = [
 async function fetchServiceStats(service: { key: string; url: string }) {
   try {
     const res = await fetch(service.url, {
-      next: { revalidate: 0 },
+      cache: 'no-store',
       signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -28,7 +26,6 @@ async function fetchServiceStats(service: { key: string; url: string }) {
 
 export async function GET() {
   const stats = await Promise.all(SERVICES.map(fetchServiceStats));
-
   return NextResponse.json({
     stats,
     ga4: [],
