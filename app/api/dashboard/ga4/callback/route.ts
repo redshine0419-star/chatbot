@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     await put(
       'dashboard-ga4-token.json',
       JSON.stringify({ ...tokens, properties: GA4_PROPERTIES, savedAt: new Date().toISOString() }),
-      { access: 'public', addRandomSuffix: false, allowOverwrite: true },
+      { access: 'public', addRandomSuffix: false },
     );
     return NextResponse.redirect(`${appUrl}/dashboard?ga4=connected`);
   } catch (e) {
