@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
 
-export const dynamic = 'force-dynamic';
-
 const GA4_PROPERTIES = [
   { key: 'marketerops', propertyId: '538101783', domain: 'growweb.me' },
   { key: 'flavorsync', propertyId: '539541349', domain: 'flavorsync.me' },
@@ -12,12 +10,10 @@ const GA4_PROPERTIES = [
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
-  if (!code) {
-    return NextResponse.redirect('/dashboard?ga4=error');
-  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
+  if (!code) return NextResponse.redirect(`${appUrl}/dashboard?ga4=error`);
 
   try {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://your-chatbot-domain.vercel.app';
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -29,23 +25,17 @@ export async function GET(req: NextRequest) {
         grant_type: 'authorization_code',
       }),
     });
-
     const tokens = await tokenRes.json();
     if (!tokens.access_token) throw new Error('토큰 발급 실패');
 
     await put(
       'dashboard-ga4-token.json',
-      JSON.stringify({
-        ...tokens,
-        properties: GA4_PROPERTIES,
-        savedAt: new Date().toISOString(),
-      }),
-      { access: 'public', addRandomSuffix: false, allowOverwrite: true },
+      JSON.stringify({ ...tokens, properties: GA4_PROPERTIES, savedAt: new Date().toISOString() }),
+      { access: 'public', addRandomSuffix: false },
     );
-
     return NextResponse.redirect(`${appUrl}/dashboard?ga4=connected`);
   } catch (e) {
     console.error('GA4 callback error:', e);
-    return NextResponse.redirect('/dashboard?ga4=error');
+    return NextResponse.redirect(`${appUrl}/dashboard?ga4=error`);
   }
 }
