@@ -32,6 +32,9 @@ async function ensureTable() {
   `;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const toJson = (v: unknown) => sql.json(v as any);
+
 export async function saveCycle(cycle: Cycle) {
   await ensureTable();
   await sql`
@@ -39,7 +42,7 @@ export async function saveCycle(cycle: Cycle) {
     VALUES (
       ${cycle.id},
       ${cycle.planText},
-      ${sql.json(cycle.issues as unknown as Record<string, unknown>[])},
+      ${toJson(cycle.issues)},
       ${cycle.createdAt},
       ${cycle.completedAt ?? null}
     )
@@ -69,7 +72,7 @@ export async function getCurrentCycle(): Promise<Cycle | null> {
 }
 
 export async function updateCycleIssues(id: string, issues: CycleIssue[]) {
-  await sql`UPDATE dashboard_cycles SET issues = ${sql.json(issues as unknown as Record<string, unknown>[])} WHERE id = ${id}`;
+  await sql`UPDATE dashboard_cycles SET issues = ${toJson(issues)} WHERE id = ${id}`;
 }
 
 export async function markCycleComplete(id: string) {
