@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
+import { saveGA4Token } from '@/lib/ga4-token';
 
 const GA4_PROPERTIES = [
   { key: 'marketerops', propertyId: '538101783', domain: 'growweb.me' },
@@ -26,13 +26,9 @@ export async function GET(req: NextRequest) {
       }),
     });
     const tokens = await tokenRes.json();
-    if (!tokens.access_token) throw new Error('토큰 발급 실패');
+    if (!tokens.access_token) throw new Error('토큰 발급 실패: ' + JSON.stringify(tokens));
 
-    await put(
-      'dashboard-ga4-token.json',
-      JSON.stringify({ ...tokens, properties: GA4_PROPERTIES, savedAt: new Date().toISOString() }),
-      { access: 'public', addRandomSuffix: false },
-    );
+    await saveGA4Token({ ...tokens, properties: GA4_PROPERTIES, savedAt: new Date().toISOString() });
     return NextResponse.redirect(`${appUrl}/dashboard?ga4=connected`);
   } catch (e) {
     console.error('GA4 callback error:', e);
