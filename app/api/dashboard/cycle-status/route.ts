@@ -27,7 +27,13 @@ export async function GET() {
     if (!cycle) return NextResponse.json({ hasCycle: false });
 
     if (cycle.issues.length === 0) {
-      return NextResponse.json({ hasCycle: true, cycle, allDone: false });
+      return NextResponse.json({
+        hasCycle: true,
+        cycle,
+        allDone: false,
+        openCount: 0,
+        closedCount: 0,
+      });
     }
 
     // GitHub에서 최신 이슈 상태 조회
@@ -38,11 +44,20 @@ export async function GET() {
       })),
     );
 
-    await updateCycleIssues(cycle.id, updatedIssues);
+    // DB 업데이트 실패해도 응답은 반환
+    try {
+      await updateCycleIssues(cycle.id, updatedIssues);
+    } catch (e) {
+      console.error('updateCycleIssues failed:', e);
+    }
 
     const allDone = updatedIssues.length > 0 && updatedIssues.every((i) => i.status === 'closed');
     if (allDone && !cycle.completedAt) {
-      await markCycleComplete(cycle.id);
+      try {
+        await markCycleComplete(cycle.id);
+      } catch (e) {
+        console.error('markCycleComplete failed:', e);
+      }
     }
 
     return NextResponse.json({
@@ -53,6 +68,7 @@ export async function GET() {
       closedCount: updatedIssues.filter((i) => i.status === 'closed').length,
     });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error('cycle-status error:', e);
+    return NextResponse.json({ error: (e as Error).message, hasCycle: false }, { status: 500 });
   }
 }

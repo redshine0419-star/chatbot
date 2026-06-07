@@ -36,7 +36,13 @@ export async function saveCycle(cycle: Cycle) {
   await ensureTable();
   await sql`
     INSERT INTO dashboard_cycles (id, plan_text, issues, created_at, completed_at)
-    VALUES (${cycle.id}, ${cycle.planText}, ${JSON.stringify(cycle.issues)}, ${cycle.createdAt}, ${cycle.completedAt ?? null})
+    VALUES (
+      ${cycle.id},
+      ${cycle.planText},
+      ${sql.json(cycle.issues as unknown as Record<string, unknown>[])},
+      ${cycle.createdAt},
+      ${cycle.completedAt ?? null}
+    )
     ON CONFLICT (id) DO UPDATE
     SET plan_text = EXCLUDED.plan_text,
         issues = EXCLUDED.issues,
@@ -45,28 +51,25 @@ export async function saveCycle(cycle: Cycle) {
 }
 
 export async function getCurrentCycle(): Promise<Cycle | null> {
-  try {
-    await ensureTable();
-    const rows = await sql`
-      SELECT * FROM dashboard_cycles
-      ORDER BY created_at DESC LIMIT 1
-    `;
-    if (rows.length === 0) return null;
-    const row = rows[0];
-    return {
-      id: row.id as string,
-      planText: row.plan_text as string,
-      issues: row.issues as CycleIssue[],
-      createdAt: (row.created_at as Date).toISOString(),
-      completedAt: row.completed_at ? (row.completed_at as Date).toISOString() : undefined,
-    };
-  } catch {
-    return null;
-  }
+  await ensureTable();
+  const rows = await sql`
+    SELECT * FROM dashboard_cycles
+    WHERE completed_at IS NULL
+    ORDER BY created_at DESC LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    id: row.id as string,
+    planText: row.plan_text as string,
+    issues: row.issues as CycleIssue[],
+    createdAt: (row.created_at as Date).toISOString(),
+    completedAt: row.completed_at ? (row.completed_at as Date).toISOString() : undefined,
+  };
 }
 
 export async function updateCycleIssues(id: string, issues: CycleIssue[]) {
-  await sql`UPDATE dashboard_cycles SET issues = ${JSON.stringify(issues)} WHERE id = ${id}`;
+  await sql`UPDATE dashboard_cycles SET issues = ${sql.json(issues as unknown as Record<string, unknown>[])} WHERE id = ${id}`;
 }
 
 export async function markCycleComplete(id: string) {
