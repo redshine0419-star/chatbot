@@ -108,6 +108,7 @@ export default function DashboardPage() {
   const [cycleId, setCycleId] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
+  const [executeError, setExecuteError] = useState<string | null>(null);
   const [cycleStatus, setCycleStatus] = useState<CycleStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(false);
   const [tab, setTab] = useState<'overview' | 'cycle'>('overview');
@@ -141,20 +142,18 @@ export default function DashboardPage() {
     fetchCycleStatus();
   }, [fetchDashboard, fetchCycleStatus]);
 
-  // 사이클 완료 시 자동 새 플랜 알림
-  useEffect(() => {
-    if (cycleStatus?.allDone && cycleStatus.cycle?.completedAt) {
-      // 모두 완료 — 새 플랜 생성 유도
-    }
-  }, [cycleStatus]);
-
   async function generatePlan() {
     setPlanLoading(true);
+    setPlan(null);
+    setCycleId(null);
     try {
       const res = await fetch('/api/dashboard/plan', { method: 'POST' });
       const json = await res.json();
+      if (json.error) throw new Error(json.error);
       setPlan(json.plan);
       setCycleId(json.cycleId);
+    } catch (e) {
+      alert('플랜 생성 실패: ' + (e as Error).message);
     } finally {
       setPlanLoading(false);
     }
@@ -163,6 +162,7 @@ export default function DashboardPage() {
   async function executeIssues() {
     if (!plan || !cycleId) return;
     setExecuting(true);
+    setExecuteError(null);
     try {
       const res = await fetch('/api/dashboard/execute', {
         method: 'POST',
@@ -170,10 +170,18 @@ export default function DashboardPage() {
         body: JSON.stringify({ cycleId, plan }),
       });
       const json = await res.json();
-      if (json.ok) {
+      if (!res.ok) throw new Error(json.error ?? 'Unknown error');
+      if (json.errors?.length > 0) {
+        setExecuteError(`일부 실패: ${json.errors.join(', ')}`);
+      }
+      if (json.issueCount > 0) {
         setTab('cycle');
         await fetchCycleStatus();
+      } else {
+        setExecuteError('이슈가 생성되지 않았습니다. GITHUB_TOKEN 환경변수를 확인하세요.');
       }
+    } catch (e) {
+      setExecuteError((e as Error).message);
     } finally {
       setExecuting(false);
     }
@@ -196,7 +204,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      {/* 헤더 */}
       <div className="border-b border-gray-800 bg-gray-900/50 backdrop-blur sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
@@ -218,8 +225,7 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
-        {/* 탭 */}
-        <div className="max-w-7xl mx-auto px-6 flex gap-1 pb-0">
+        <div className="max-w-7xl mx-auto px-6 flex gap-1">
           {(['overview', 'cycle'] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -239,7 +245,6 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
         {tab === 'overview' && (
           <>
-            {/* 요약 카드 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { label: '총 블로그 글', value: totalPosts, unit: '개' },
@@ -249,14 +254,11 @@ export default function DashboardPage() {
               ].map((item) => (
                 <div key={item.label} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-5">
                   <p className="text-sm text-gray-400">{item.label}</p>
-                  <p className="text-3xl font-bold mt-1">
-                    {item.value}<span className="text-sm text-gray-500 font-normal ml-1">{item.unit}</span>
-                  </p>
+                  <p className="text-3xl font-bold mt-1">{item.value}<span className="text-sm text-gray-500 font-normal ml-1">{item.unit}</span></p>
                 </div>
               ))}
             </div>
 
-            {/* 서비스별 블로그 */}
             <div>
               <h2 className="text-lg font-semibold mb-4">서비스별 블로그 현황</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -295,7 +297,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* GA4 */}
             {ga4Connected && ga4Data.length > 0 && (
               <div>
                 <h2 className="text-lg font-semibold mb-4">GA4 트래픽 현황 (최근 7일)</h2>
@@ -326,7 +327,6 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* AI 플랜 */}
             <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-semibold">AI 전략 플랜</h2>
@@ -337,20 +337,18 @@ export default function DashboardPage() {
               </div>
 
               {!plan ? (
-                <p className="text-gray-500 text-sm">"플랜 생성" 버튼을 눌러 Gemini AI 전략 분석을 시작하세요.</p>
+                <p className="text-gray-500 text-sm">&quot;플랜 생성&quot; 버튼을 눌러 Gemini AI 전략 분석을 시작하세요.</p>
               ) : (
                 <div className="space-y-6">
                   {plan.summary && (
                     <p className="text-gray-300 text-sm leading-relaxed border-l-2 border-gray-600 pl-4">{plan.summary}</p>
                   )}
-
-                  {/* 액션 3가지 */}
                   <div>
                     <h3 className="text-sm font-semibold text-violet-400 mb-3">🎯 이번 주 핵심 액션</h3>
                     <div className="space-y-3">
                       {plan.actions?.map((item, i) => (
                         <div key={i} className="border border-violet-700/50 bg-violet-900/10 rounded-lg p-4">
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-1">
                             <span className={`w-2 h-2 rounded-full ${SERVICE_COLORS[item.service] ?? 'bg-gray-500'}`} />
                             <span className="text-xs text-gray-400">{SERVICE_LABELS[item.service]}</span>
                           </div>
@@ -360,14 +358,12 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-
-                  {/* 2주 플랜 */}
                   <div>
                     <h3 className="text-sm font-semibold text-blue-400 mb-3">📅 2주 플랜</h3>
                     <div className="space-y-3">
                       {plan.twoWeekPlan?.map((item, i) => (
                         <div key={i} className="border border-blue-700/50 bg-blue-900/10 rounded-lg p-4">
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-1">
                             <span className={`w-2 h-2 rounded-full ${SERVICE_COLORS[item.service] ?? 'bg-gray-500'}`} />
                             <span className="text-xs text-gray-400">{SERVICE_LABELS[item.service]}</span>
                           </div>
@@ -377,14 +373,12 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-
-                  {/* 주의 신호 */}
                   <div>
                     <h3 className="text-sm font-semibold text-yellow-400 mb-3">⚠️ 주의 신호</h3>
                     <div className="space-y-3">
                       {plan.warnings?.map((item, i) => (
                         <div key={i} className="border border-yellow-700/50 bg-yellow-900/10 rounded-lg p-4">
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-1">
                             <span className={`w-2 h-2 rounded-full ${SERVICE_COLORS[item.service] ?? 'bg-gray-500'}`} />
                             <span className="text-xs text-gray-400">{SERVICE_LABELS[item.service]}</span>
                           </div>
@@ -395,7 +389,12 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {/* 이슈 생성 버튼 */}
+                  {executeError && (
+                    <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-4">
+                      <p className="text-red-400 text-sm">⚠️ {executeError}</p>
+                    </div>
+                  )}
+
                   <div className="pt-2 border-t border-gray-700">
                     <button onClick={executeIssues} disabled={executing}
                       className="w-full py-3 text-sm font-medium bg-green-700 hover:bg-green-600 rounded-lg disabled:opacity-50 transition-colors">
@@ -427,7 +426,6 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                {/* 진행률 */}
                 {cycleStatus.cycle && cycleStatus.cycle.issues.length > 0 && (
                   <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
                     <div className="flex items-center justify-between mb-4">
@@ -439,10 +437,7 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       {cycleStatus.allDone ? (
-                        <div className="text-right">
-                          <span className="px-4 py-2 bg-green-700 rounded-lg text-sm font-medium">✅ 사이클 완료!</span>
-                          <p className="text-xs text-gray-500 mt-2">새 플랜을 생성하세요</p>
-                        </div>
+                        <span className="px-4 py-2 bg-green-700 rounded-lg text-sm font-medium">✅ 사이클 완료!</span>
                       ) : (
                         <span className="text-sm text-yellow-400">{cycleStatus.openCount}개 진행 중</span>
                       )}
@@ -456,7 +451,6 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* 카테고리별 이슈 목록 */}
                 {(['action', 'plan', 'warning'] as const).map((cat) => {
                   const items = cycleStatus.cycle?.issues.filter((i) => i.category === cat) ?? [];
                   if (items.length === 0) return null;
@@ -484,9 +478,7 @@ export default function DashboardPage() {
                               </p>
                             </div>
                             <a href={issue.url} target="_blank" rel="noreferrer"
-                              className="text-xs text-gray-500 hover:text-gray-300 shrink-0">
-                              GitHub ↗
-                            </a>
+                              className="text-xs text-gray-500 hover:text-gray-300 shrink-0">GitHub ↗</a>
                           </div>
                         ))}
                       </div>
@@ -494,7 +486,6 @@ export default function DashboardPage() {
                   );
                 })}
 
-                {/* 사이클 완료 시 새 플랜 유도 */}
                 {cycleStatus.allDone && (
                   <div className="bg-green-900/20 border border-green-700/50 rounded-xl p-6 text-center">
                     <p className="text-green-400 text-lg font-semibold mb-2">🎉 모든 이슈가 완료됐습니다!</p>
