@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { saveCycle } from '@/lib/cycle-store';
+import { nanoid } from 'nanoid';
 
 const SERVICES = [
   { key: 'marketerops', url: 'https://growweb.me/api/stats' },
@@ -33,7 +35,43 @@ export async function POST() {
       ].filter(Boolean).join('\n');
     }).join('\n\n');
 
-    const prompt = `당신은 데이터 기반 디지털 마케팅 전략가입니다.\n\n아래는 현재 운영 중인 4개 서비스의 현황입니다:\n\n${summary}\n\n위 데이터를 분석하여 다음을 작성해주세요:\n\n## 📊 현황 분석\n각 서비스의 콘텐츠 생산성과 성장세를 간략히 평가하세요.\n\n## 🎯 이번 주 핵심 액션 (3가지)\n가장 임팩트가 큰 구체적인 행동 방안을 제시하세요.\n\n## 📅 2주 플랜\n서비스별로 집중할 콘텐츠 전략을 제안하세요.\n\n## ⚠️ 주의 신호\n데이터에서 발견되는 문제점이나 리스크를 짚아주세요.\n\n간결하고 실행 가능한 언어로 작성해주세요.`;
+    const prompt = `당신은 데이터 기반 디지털 마케팅 전략가입니다.
+
+아래는 현재 운영 중인 4개 서비스의 현황입니다:
+
+${summary}
+
+위 데이터를 분석하여 아래 JSON 형식으로 정확히 응답하세요. JSON 외 다른 텍스트는 절대 포함하지 마세요.
+
+{
+  "summary": "전체 현황 분석 (2-3문장)",
+  "actions": [
+    {
+      "service": "서비스키(marketerops/flavorsync/taskgrid/askhistory 중 하나)",
+      "title": "이슈 제목 (간결하게)",
+      "body": "구체적인 실행 방법, 예상 효과, 참고 데이터 포함"
+    }
+  ],
+  "twoWeekPlan": [
+    {
+      "service": "서비스키",
+      "title": "2주 플랜 제목",
+      "body": "2주 내 실행할 구체적 콘텐츠/기능 전략"
+    }
+  ],
+  "warnings": [
+    {
+      "service": "서비스키",
+      "title": "주의 신호 제목",
+      "body": "문제점, 리스크, 권장 대응 방안"
+    }
+  ]
+}
+
+- actions는 정확히 3개
+- twoWeekPlan은 서비스별 1-2개
+- warnings는 1-3개
+- 각 서비스에 골고루 배분하되 데이터 기반으로 우선순위 결정`;
 
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -42,14 +80,25 @@ export async function POST() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json' },
         }),
       },
     );
 
     const geminiData = await geminiRes.json();
-    const plan = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '플랜 생성 실패';
+    const raw = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+    const parsed = JSON.parse(raw);
 
-    return NextResponse.json({ plan, generatedAt: new Date().toISOString() });
+    const cycleId = nanoid();
+    const planText = JSON.stringify(parsed);
+    await saveCycle({
+      id: cycleId,
+      planText,
+      issues: [],
+      createdAt: new Date().toISOString(),
+    });
+
+    return NextResponse.json({ cycleId, plan: parsed, generatedAt: new Date().toISOString() });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
