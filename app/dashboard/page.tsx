@@ -15,39 +15,26 @@ const CATEGORY_STYLES = {
 }
 
 const ARCH_DATA = [
-  {
-    id: 'marketerops',
-    name: 'MarketerOps.ai',
-    stack: 'Next.js 16 · Prisma · Neon · Gemini 2.5 Flash · Claude fallback · Vercel',
-    cost: '$20/mo (Vercel Pro) + ~$1 AI',
-    notes: 'GA4·GSC OAuth 연동, PageSpeed 진단, 콘텐츠 허브',
-  },
-  {
-    id: 'flavorsync',
-    name: 'FlavorSync',
-    stack: 'Next.js 15 · Neon · next-auth v4 · Gemini 2.5 Flash · Vercel',
-    cost: '$0 (Vercel Hobby) + ~$0.5 AI',
-    notes: '레시피 위키, 냉장고 관리, YouTube OCR 분석',
-  },
-  {
-    id: 'taskgrid',
-    name: 'TaskGrid',
-    stack: 'Next.js 15 · Neon · Google Sheets API · Gemini 2.5 Flash · Vercel',
-    cost: '$0 (Vercel Hobby) + ~$0.3 AI',
-    notes: 'Google Sheets를 DB로 사용하는 칸반 보드',
-  },
-  {
-    id: 'askhistory',
-    name: 'AskHistory',
-    stack: 'Next.js · Gemini 2.5 Flash · Vercel',
-    cost: '$0 (Vercel Hobby) + ~$0.2 AI',
-    notes: 'AI 세계사 학습, Q&A 챗봇',
-  },
+  { id: 'marketerops', name: 'MarketerOps.ai', stack: 'Next.js 16 · Prisma · Neon · Gemini 2.5 Flash · Claude fallback · Vercel', cost: '$20/mo (Vercel Pro) + ~$1 AI', notes: 'GA4·GSC OAuth 연동, PageSpeed 진단, 콘텐츠 허브' },
+  { id: 'flavorsync', name: 'FlavorSync', stack: 'Next.js 15 · Neon · next-auth v4 · Gemini 2.5 Flash · Vercel', cost: '$0 (Vercel Hobby) + ~$0.5 AI', notes: '레시피 위키, 냉장고 관리, YouTube OCR 분석' },
+  { id: 'taskgrid', name: 'TaskGrid', stack: 'Next.js 15 · Neon · Google Sheets API · Gemini 2.5 Flash · Vercel', cost: '$0 (Vercel Hobby) + ~$0.3 AI', notes: 'Google Sheets를 DB로 사용하는 칸반 보드' },
+  { id: 'askhistory', name: 'AskHistory', stack: 'Next.js 14 · Drizzle · Neon · Gemini 2.5 Flash · Vercel', cost: '$0 (Vercel Hobby) + ~$0.2 AI', notes: 'AI 세계사 학습, Q&A 챗봇' },
 ]
 
+const TABS = [
+  { key: 'status', label: '현황' },
+  { key: 'cycle', label: 'AI PM' },
+  { key: 'ideas', label: '아이디어' },
+  { key: 'arch', label: '비용·아키텍처' },
+  { key: 'briefing', label: '모닝 브리핑' },
+] as const
+
+type TabKey = typeof TABS[number]['key']
+
 export default function DashboardPage() {
-  const [tab, setTab] = useState<'status' | 'cycle' | 'ideas' | 'arch' | 'briefing'>('status')
-  const [stats, setStats] = useState<Record<string, any>>({})
+  const [tab, setTab] = useState<TabKey>('status')
+  const [statsData, setStatsData] = useState<any>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
   const [cycle, setCycle] = useState<any>(null)
   const [cycleLoading, setCycleLoading] = useState(false)
   const [planLoading, setPlanLoading] = useState(false)
@@ -61,12 +48,11 @@ export default function DashboardPage() {
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   useEffect(() => {
-    SERVICES.forEach(s => {
-      fetch(`/api/dashboard/stats/${s.id}`)
-        .then(r => r.json())
-        .then(d => setStats(prev => ({ ...prev, [s.id]: d })))
-        .catch(() => {})
-    })
+    fetch('/api/dashboard/stats')
+      .then(r => r.json())
+      .then(d => setStatsData(d))
+      .catch(() => {})
+      .finally(() => setStatsLoading(false))
   }, [])
 
   useEffect(() => {
@@ -96,10 +82,7 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/dashboard/plan', { method: 'POST' })
       const data = await res.json()
-      if (!res.ok) {
-        alert('플랜 생성 실패: ' + (data.error || res.status))
-        return
-      }
+      if (!res.ok) { alert('플랜 생성 실패: ' + (data.error || res.status)); return }
       await loadCycle()
     } finally {
       setPlanLoading(false)
@@ -115,22 +98,12 @@ export default function DashboardPage() {
     })
     const data = await res.json()
     if (data.ok) {
-      setCycle((prev: any) => ({
-        ...prev,
-        cycle: { ...prev.cycle, tasks: data.tasks },
-        doneCount: data.doneCount,
-        allDone: data.allDone,
-      }))
+      setCycle((prev: any) => ({ ...prev, cycle: { ...prev.cycle, tasks: data.tasks }, doneCount: data.doneCount, allDone: data.allDone }))
     }
   }
 
   function toggleExpand(id: string) {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
   async function saveIdea(serviceId: string) {
@@ -144,8 +117,7 @@ export default function DashboardPage() {
   }
 
   function downloadIdea(serviceId: string) {
-    const content = ideas[serviceId] || ''
-    const blob = new Blob([content], { type: 'text/plain' })
+    const blob = new Blob([ideas[serviceId] || ''], { type: 'text/plain' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = `${serviceId}-ideas.txt`
@@ -165,18 +137,21 @@ export default function DashboardPage() {
 
   function speak() {
     if (!briefing) return
-    if (speaking) {
-      window.speechSynthesis.cancel()
-      setSpeaking(false)
-      return
-    }
+    if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return }
     const u = new SpeechSynthesisUtterance(briefing)
-    u.lang = 'ko-KR'
-    u.rate = 1.0
+    u.lang = 'ko-KR'; u.rate = 1.0
     u.onend = () => setSpeaking(false)
     synthRef.current = u
     window.speechSynthesis.speak(u)
     setSpeaking(true)
+  }
+
+  // Map stats by service key
+  const statsMap: Record<string, any> = {}
+  const ga4Map: Record<string, any> = {}
+  if (statsData) {
+    for (const s of statsData.stats || []) statsMap[s.service || s.key] = s
+    for (const g of statsData.ga4 || []) ga4Map[g.property] = g
   }
 
   const tasks = cycle?.cycle?.tasks || []
@@ -185,37 +160,32 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">서비스 통합 대시보드</h1>
+      <div className="max-w-6xl mx-auto p-4">
+        <h1 className="text-xl font-bold text-gray-900 mb-4">서비스 통합 대시보드</h1>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-gray-200">
-          {([
-            ['status', '📊 현황'],
-            ['cycle', '✅ AI PM 사이클'],
-            ['ideas', '💡 아이디어'],
-            ['arch', '🏗️ 비용·아키텍처'],
-            ['briefing', '🌅 모닝 브리핑'],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                tab === key
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        {/* Tabs — horizontal scroll on mobile */}
+        <div className="overflow-x-auto mb-6 border-b border-gray-200">
+          <div className="flex gap-1 min-w-max">
+            {TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                  tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* STATUS TAB */}
+        {/* STATUS */}
         {tab === 'status' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(s => {
-              const d = stats[s.id]
+              const d = statsMap[s.id]
+              const g = ga4Map[s.id]
               return (
                 <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -223,24 +193,31 @@ export default function DashboardPage() {
                     <h2 className="font-semibold text-gray-900">{s.name}</h2>
                     <a href={s.url} target="_blank" className="ml-auto text-xs text-gray-400 hover:underline">{s.url}</a>
                   </div>
-                  {!d ? (
+                  {statsLoading ? (
                     <p className="text-sm text-gray-400">로딩 중...</p>
                   ) : (
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div className="bg-gray-50 rounded-lg p-3">
                         <div className="text-gray-500 text-xs mb-1">전체 블로그</div>
-                        <div className="font-bold text-lg">{d.totalPosts ?? '-'}</div>
+                        <div className="font-bold text-lg">{d?.blog?.total ?? d?.totalPosts ?? '-'}</div>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-3">
                         <div className="text-gray-500 text-xs mb-1">이번 주 신규</div>
-                        <div className="font-bold text-lg">{d.weeklyPosts ?? '-'}</div>
+                        <div className="font-bold text-lg">{d?.blog?.recentWeek ?? d?.weeklyPosts ?? '-'}</div>
                       </div>
-                      {d.ga4Users !== undefined && (
-                        <div className="bg-gray-50 rounded-lg p-3 col-span-2">
-                          <div className="text-gray-500 text-xs mb-1">GA4 어제 방문자</div>
-                          <div className="font-bold text-lg">{d.ga4Users}</div>
-                        </div>
+                      {g && (
+                        <>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="text-gray-500 text-xs mb-1">GA4 7일 사용자</div>
+                            <div className="font-bold text-lg">{g.users?.toLocaleString()}</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <div className="text-gray-500 text-xs mb-1">GA4 7일 세션</div>
+                            <div className="font-bold text-lg">{g.sessions?.toLocaleString()}</div>
+                          </div>
+                        </>
                       )}
+                      {d?.error && <div className="col-span-2 text-xs text-red-400">{d.error}</div>}
                     </div>
                   )}
                 </div>
@@ -249,27 +226,19 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* CYCLE TAB */}
+        {/* CYCLE */}
         {tab === 'cycle' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <div>
-                {cycle?.hasCycle && (
-                  <span className="text-sm text-gray-600">
-                    진행 중: {doneCount}/{totalCount} 완료
-                    {cycle.allDone && <span className="ml-2 text-green-600 font-semibold">🎉 사이클 완료!</span>}
-                  </span>
-                )}
+              <div className="text-sm text-gray-600">
+                {cycle?.hasCycle && `진행 중: ${doneCount}/${totalCount} 완료`}
+                {cycle?.allDone && <span className="ml-2 text-green-600 font-semibold">🎉 사이클 완료!</span>}
               </div>
-              <button
-                onClick={generatePlan}
-                disabled={planLoading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
+              <button onClick={generatePlan} disabled={planLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
                 {planLoading ? '생성 중...' : '🤖 새 AI 플랜 생성'}
               </button>
             </div>
-
             {cycleLoading ? (
               <p className="text-gray-500">로딩 중...</p>
             ) : !cycle?.hasCycle ? (
@@ -281,11 +250,11 @@ export default function DashboardPage() {
               <div className="space-y-3">
                 {(['action', 'plan', 'warning'] as const).map(cat => {
                   const catTasks = tasks.filter((t: any) => t.category === cat)
-                  if (catTasks.length === 0) return null
+                  if (!catTasks.length) return null
                   const style = CATEGORY_STYLES[cat]
                   return (
                     <div key={cat}>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">{style.label}</h3>
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{style.label}</h3>
                       <div className="space-y-2">
                         {catTasks.map((task: any) => {
                           const isExpanded = expanded.has(task.id)
@@ -293,12 +262,8 @@ export default function DashboardPage() {
                           return (
                             <div key={task.id} className={`border rounded-xl overflow-hidden ${style.bg}`}>
                               <div className="flex items-start gap-3 p-4">
-                                <input
-                                  type="checkbox"
-                                  checked={task.done}
-                                  onChange={() => toggleTask(task.id)}
-                                  className="mt-1 w-4 h-4 cursor-pointer flex-shrink-0"
-                                />
+                                <input type="checkbox" checked={task.done} onChange={() => toggleTask(task.id)}
+                                  className="mt-1 w-4 h-4 cursor-pointer flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap mb-1">
                                     {svc && <span className={`w-2 h-2 rounded-full ${svc.color} flex-shrink-0`} />}
@@ -309,24 +274,21 @@ export default function DashboardPage() {
                                   <p className="text-sm text-gray-600 mt-1">{task.body}</p>
                                 </div>
                                 {(task.steps?.length > 0 || task.goal) && (
-                                  <button
-                                    onClick={() => toggleExpand(task.id)}
-                                    className="flex-shrink-0 text-gray-400 hover:text-gray-600 text-lg"
-                                    title={isExpanded ? '접기' : '자세히 보기'}
-                                  >
+                                  <button onClick={() => toggleExpand(task.id)}
+                                    className="flex-shrink-0 text-gray-400 hover:text-gray-600 text-lg">
                                     {isExpanded ? '▲' : '▼'}
                                   </button>
                                 )}
                               </div>
                               {isExpanded && (
-                                <div className={`px-4 pb-4 pt-0 border-t border-current border-opacity-10 ${style.stepBg}`}>
+                                <div className={`px-4 pb-4 border-t border-current border-opacity-10 ${style.stepBg}`}>
                                   {task.steps?.length > 0 && (
-                                    <div className="mb-3">
+                                    <div className="mb-3 pt-3">
                                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">실행 단계</p>
                                       <ol className="space-y-1">
                                         {task.steps.map((step: string, i: number) => (
                                           <li key={i} className="flex gap-2 text-sm text-gray-700">
-                                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white border text-xs flex items-center justify-center font-medium">{i + 1}</span>
+                                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white border text-xs flex items-center justify-center font-medium">{i+1}</span>
                                             <span>{step}</span>
                                           </li>
                                         ))}
@@ -353,7 +315,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* IDEAS TAB */}
+        {/* IDEAS */}
         {tab === 'ideas' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(s => (
@@ -362,23 +324,16 @@ export default function DashboardPage() {
                   <span className={`w-3 h-3 rounded-full ${s.color}`} />
                   <h2 className="font-semibold text-gray-900">{s.name}</h2>
                   <div className="ml-auto flex gap-2">
-                    <button onClick={() => downloadIdea(s.id)} className="text-xs text-gray-400 hover:text-gray-600">💾 저장</button>
-                    <button
-                      onClick={() => { setEditingIdea(s.id); setIdeaDraft(ideas[s.id] || '') }}
-                      className="text-xs text-blue-500 hover:text-blue-700"
-                    >
-                      ✏️ 편집
-                    </button>
+                    <button onClick={() => downloadIdea(s.id)} className="text-xs text-gray-400 hover:text-gray-600">💾</button>
+                    <button onClick={() => { setEditingIdea(s.id); setIdeaDraft(ideas[s.id] || '') }}
+                      className="text-xs text-blue-500 hover:text-blue-700">✏️ 편집</button>
                   </div>
                 </div>
                 {editingIdea === s.id ? (
                   <div>
-                    <textarea
-                      value={ideaDraft}
-                      onChange={e => setIdeaDraft(e.target.value)}
+                    <textarea value={ideaDraft} onChange={e => setIdeaDraft(e.target.value)}
                       className="w-full h-32 text-sm border border-gray-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      placeholder="아이디어를 자유롭게 적어보세요..."
-                    />
+                      placeholder="아이디어를 자유롭게 적어보세요..." />
                     <div className="flex gap-2 mt-2">
                       <button onClick={() => saveIdea(s.id)} className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg">저장</button>
                       <button onClick={() => setEditingIdea(null)} className="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded-lg">취소</button>
@@ -394,7 +349,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ARCH TAB */}
+        {/* ARCH */}
         {tab === 'arch' && (
           <div className="space-y-4">
             <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -416,7 +371,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* BRIEFING TAB */}
+        {/* BRIEFING */}
         {tab === 'briefing' && (
           <div className="max-w-2xl">
             <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -424,11 +379,8 @@ export default function DashboardPage() {
               {!briefing ? (
                 <div className="text-center py-8">
                   <p className="text-gray-400 mb-4">오늘의 서비스 현황을 AI가 브리핑해드립니다.</p>
-                  <button
-                    onClick={loadBriefing}
-                    disabled={briefingLoading}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50"
-                  >
+                  <button onClick={loadBriefing} disabled={briefingLoading}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50">
                     {briefingLoading ? '브리핑 생성 중...' : '📋 브리핑 생성'}
                   </button>
                 </div>
@@ -436,17 +388,12 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-4">{briefing}</p>
                   <div className="flex gap-3">
-                    <button
-                      onClick={speak}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium ${speaking ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}
-                    >
+                    <button onClick={speak}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium ${speaking ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                       {speaking ? '⏹ 중지' : '🔊 읽어주기'}
                     </button>
-                    <button
-                      onClick={loadBriefing}
-                      disabled={briefingLoading}
-                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50"
-                    >
+                    <button onClick={loadBriefing} disabled={briefingLoading}
+                      className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50">
                       {briefingLoading ? '생성 중...' : '🔄 새로 생성'}
                     </button>
                   </div>
