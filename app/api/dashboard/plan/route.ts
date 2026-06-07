@@ -1,101 +1,162 @@
-import { NextResponse } from 'next/server';
-import { saveCycle, type CycleTask } from '@/lib/cycle-store';
+import { NextResponse } from 'next/server'
+import { sql } from '@/lib/db'
+import { saveCycle, CycleTask } from '@/lib/cycle-store'
 
-const SERVICES = ['marketerops', 'flavorsync', 'taskgrid', 'askhistory'];
-const SERVICE_NAMES: Record<string, string> = {
-  marketerops: 'MarketerOps.ai',
-  flavorsync: 'FlavorSync',
-  taskgrid: 'TaskGrid',
-  askhistory: 'AskHistory',
-};
-const STATS_URLS: Record<string, string> = {
-  marketerops: 'https://growweb.me/api/stats',
-  flavorsync:  'https://flavorsync.me/api/stats',
-  taskgrid:    'https://www.taskgrid.my/api/stats',
-  askhistory:  'https://askhistory.me/api/stats',
-};
+const SERVICES = [
+  { id: 'marketerops', name: 'MarketerOps.ai', url: 'https://growweb.me', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/marketerops` : null },
+  { id: 'flavorsync', name: 'FlavorSync', url: 'https://flavorsync.me', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/flavorsync` : null },
+  { id: 'taskgrid', name: 'TaskGrid', url: 'https://taskgrid.my', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/taskgrid` : null },
+  { id: 'askhistory', name: 'AskHistory', url: 'https://askhistory.me', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/askhistory` : null },
+]
+
+async function fetchStats(url: string | null) {
+  if (!url) return null
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
 
 export async function POST() {
   try {
-    // 현황 수집
+    // 1. Gather stats
     const statsResults = await Promise.allSettled(
-      SERVICES.map(async svc => {
-        try {
-          const r = await fetch(STATS_URLS[svc], { cache: 'no-store' });
-          if (!r.ok) return { service: svc, blog: { total: '?', recentWeek: '?' } };
-          return { service: svc, ...(await r.json() as Record<string, unknown>) };
-        } catch {
-          return { service: svc, blog: { total: '?', recentWeek: '?' } };
-        }
-      })
-    );
-    const statsContext = statsResults
-      .filter(r => r.status === 'fulfilled')
-      .map(r => {
-        const v = (r as PromiseFulfilledResult<Record<string, unknown>>).value;
-        const blog = (v.blog as Record<string, unknown>) ?? {};
-        return `${SERVICE_NAMES[v.service as string]}: 블로그 총 ${blog.total ?? '?'}개, 이번 주 신규 ${blog.recentWeek ?? '?'}개`;
-      })
-      .join('\n');
+      SERVICES.map(s => fetchStats(s.statsUrl))
+    )
+    const statsContext = SERVICES.map((s, i) => {
+      const data = statsResults[i].status === 'fulfilled' ? statsResults[i].value : null
+      return `${s.name} (${s.url}): ${data ? JSON.stringify(data) : '데이터 없음'}`
+    }).join('\n')
 
-    const prompt = `당신은 4개 웹서비스의 AI PM입니다. SEO와 AdSense 수익을 높이는 것이 목표입니다.
+    // 2. Build Gemini prompt
+    const geminiKey = process.env.GEMINI_API_KEY
+    if (!geminiKey) throw new Error('GEMINI_API_KEY not set')
 
-현재 현황:
+    const prompt = `당신은 SaaS 스타트업 AI PM입니다. 아래 4개 서비스 현황을 분석하여 이번 2주 액션 플랜을 JSON으로 반환하세요.
+
+서비스 현황:
 ${statsContext}
 
-이번 주 ~ 2주간 실행 계획을 아래 JSON 형식으로 작성해주세요:
+서비스 소개:
+- MarketerOps.ai: SEO/마케팅 진단 SaaS, 한국 마케터 타깃
+- FlavorSync: 레시피 관리 앱, 냉장고 식재료 기반 추천
+- TaskGrid: Google Sheets 기반 칸반 프로젝트 관리 툴
+- AskHistory: AI 세계사 학습 플랫폼
+
+다음 JSON 형식으로만 응답하세요. 다른 텍스트 없이 JSON만:
+
 {
-  "summary": "전체 상황 요약 (2문장)",
   "actions": [
-    {"service": "marketerops|flavorsync|taskgrid|askhistory", "title": "제목(30자 이내)", "body": "구체적 실행 방법"}
+    {
+      "service": "서비스ID",
+      "title": "핵심 액션 제목",
+      "body": "왜 이 액션이 필요한지 2-3문장 설명",
+      "steps": ["구체적 실행 단계1", "구체적 실행 단계2", "구체적 실행 단계3"],
+      "goal": "이 액션 완료 후 기대되는 구체적 결과"
+    }
   ],
-  "twoWeekPlan": [...],
-  "warnings": [...]
+  "twoWeekPlan": [
+    {
+      "service": "서비스ID",
+      "title": "2주 플랜 제목",
+      "body": "실행 방향 2-3문장",
+      "steps": ["단계1", "단계2", "단계3"],
+      "goal": "2주 후 기대 결과"
+    }
+  ],
+  "warnings": [
+    {
+      "service": "서비스ID",
+      "title": "주의 신호 제목",
+      "body": "위험 요소 설명 2-3문장",
+      "steps": ["개선 방안1", "개선 방안2", "개선 방안3"],
+      "goal": "리스크 해소 후 기대 상태"
+    }
+  ]
 }
 
 규칙:
-- actions: 정확히 4개 (서비스마다 1개, 이번 주 즉시 실행)
-- twoWeekPlan: 8개 (서비스마다 2개, 2주 내 실행)
-- warnings: 2~3개 (리스크·주의사항)
-- 블로그 SEO 키워드, 콘텐츠 품질, AdSense 광고 배치 중심
-- 한국어로 작성`;
+- actions: 각 서비스 1개씩 총 4개
+- twoWeekPlan: 각 서비스 2개씩 총 8개
+- warnings: 전체에서 2-3개
+- service 필드는 반드시 marketerops, flavorsync, taskgrid, askhistory 중 하나
+- steps는 반드시 3개
+- 모든 내용은 한국어로`
 
-    const gRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 2000 },
+          generationConfig: {
+            responseMimeType: 'application/json',
+            maxOutputTokens: 4000,
+          },
         }),
-        cache: 'no-store',
       }
-    );
-    if (!gRes.ok) throw new Error(`Gemini ${gRes.status}`);
+    )
 
-    const gData = await gRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-    const text = gData.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-    const plan = JSON.parse(text) as {
-      summary: string;
-      actions: Array<{ service: string; title: string; body: string }>;
-      twoWeekPlan: Array<{ service: string; title: string; body: string }>;
-      warnings: Array<{ service: string; title: string; body: string }>;
-    };
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text()
+      throw new Error(`Gemini error ${geminiRes.status}: ${errText.slice(0, 200)}`)
+    }
 
-    // 태스크 생성
-    let idx = 0;
+    const geminiData = await geminiRes.json()
+    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!rawText) throw new Error('Gemini returned empty response')
+
+    let plan: any
+    try {
+      plan = JSON.parse(rawText)
+    } catch {
+      throw new Error(`Gemini JSON parse error. Raw: ${rawText.slice(0, 300)}`)
+    }
+
+    // 3. Build tasks
     const tasks: CycleTask[] = [
-      ...(plan.actions     ?? []).map(a => ({ id: `t${++idx}`, ...a, category: 'action'  as const, done: false })),
-      ...(plan.twoWeekPlan ?? []).map(a => ({ id: `t${++idx}`, ...a, category: 'plan'    as const, done: false })),
-      ...(plan.warnings    ?? []).map(a => ({ id: `t${++idx}`, ...a, category: 'warning' as const, done: false })),
-    ];
+      ...(plan.actions || []).map((a: any, i: number) => ({
+        id: `action-${i}`,
+        service: a.service,
+        title: a.title,
+        body: a.body,
+        steps: a.steps || [],
+        goal: a.goal || '',
+        category: 'action' as const,
+        done: false,
+      })),
+      ...(plan.twoWeekPlan || []).map((a: any, i: number) => ({
+        id: `plan-${i}`,
+        service: a.service,
+        title: a.title,
+        body: a.body,
+        steps: a.steps || [],
+        goal: a.goal || '',
+        category: 'plan' as const,
+        done: false,
+      })),
+      ...(plan.warnings || []).map((a: any, i: number) => ({
+        id: `warning-${i}`,
+        service: a.service,
+        title: a.title,
+        body: a.body,
+        steps: a.steps || [],
+        goal: a.goal || '',
+        category: 'warning' as const,
+        done: false,
+      })),
+    ]
 
-    const cycleId = `cycle-${Date.now()}`;
-    await saveCycle({ id: cycleId, planText: text, tasks, createdAt: new Date().toISOString() });
+    // 4. Save to DB
+    const cycleId = await saveCycle(tasks)
 
-    return NextResponse.json({ cycleId, plan, tasks, generatedAt: new Date().toISOString() });
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    return NextResponse.json({ cycleId, plan, tasks, generatedAt: new Date().toISOString() })
+  } catch (err: any) {
+    console.error('[plan] error:', err?.message || err)
+    return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
   }
 }
