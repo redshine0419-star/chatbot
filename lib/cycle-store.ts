@@ -1,4 +1,8 @@
-import { sql } from '@/lib/db'
+import postgres from 'postgres'
+
+const sql = postgres(process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? '')
+
+const toJson = (v: unknown) => sql.json(v as any)
 
 export interface CycleTask {
   id: string
@@ -18,15 +22,11 @@ export interface Cycle {
   tasks: CycleTask[]
 }
 
-const toJson = (v: unknown) => sql.json(v as any)
-
 function rowToTasks(row: any): CycleTask[] {
   const raw = row.issues
   if (!raw) return []
   if (Array.isArray(raw)) {
-    // New format: CycleTask[]
     if (raw.length > 0 && 'done' in raw[0]) return raw as CycleTask[]
-    // Old format: CycleIssue[] with status field
     return (raw as any[]).map((issue: any) => ({
       id: String(issue.number || issue.id || Math.random()),
       service: issue.service || 'unknown',
