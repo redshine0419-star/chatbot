@@ -47,6 +47,8 @@ export async function POST(req: NextRequest) {
       ...((plan.warnings ?? []).map((a: { service: string; title: string; body: string }) => ({ ...a, category: 'warning' as const }))),
     ];
 
+    console.log(`Creating ${tasks.length} issues for cycle ${cycleId}`);
+
     const issues: CycleIssue[] = [];
     const errors: string[] = [];
 
@@ -67,21 +69,39 @@ export async function POST(req: NextRequest) {
           url: result.html_url,
           status: 'open',
         });
+        console.log(`Created issue #${result.number} in ${repo}: ${task.title}`);
       } else {
-        errors.push(`Failed to create issue for ${task.service}: ${task.title}`);
+        errors.push(`Failed: ${task.service} - ${task.title}`);
       }
     }
 
-    // 사이클 저장 (이미 존재하면 이슈 업데이트, 없으면 새로 저장)
+    // DB에 저장
     await saveCycle({
       id: cycleId,
       planText: JSON.stringify(plan),
       issues,
       createdAt: new Date().toISOString(),
     });
-    await updateCycleIssues(cycleId, issues);
+    if (issues.length > 0) {
+      await updateCycleIssues(cycleId, issues);
+    }
 
-    return NextResponse.json({ ok: true, issueCount: issues.length, issues, errors });
+    console.log(`Cycle ${cycleId}: ${issues.length} issues created, ${errors.length} errors`);
+
+    // cycle 객체를 클라이언트에 바로 반환 (DB 재조회 불필요)
+    const cycleForClient = {
+      id: cycleId,
+      issues,
+      createdAt: new Date().toISOString(),
+    };
+
+    return NextResponse.json({
+      ok: true,
+      issueCount: issues.length,
+      issues,
+      errors,
+      cycle: cycleForClient,
+    });
   } catch (e) {
     console.error('Execute error:', e);
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });

@@ -171,14 +171,27 @@ export default function DashboardPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Unknown error');
-      if (json.errors?.length > 0) {
-        setExecuteError(`일부 실패: ${json.errors.join(', ')}`);
-      }
+
       if (json.issueCount > 0) {
+        // DB 재조회 없이 바로 상태 설정
+        const openCount = json.issues.filter((i: CycleIssue) => i.status === 'open').length;
+        const closedCount = json.issues.filter((i: CycleIssue) => i.status === 'closed').length;
+        setCycleStatus({
+          hasCycle: true,
+          allDone: false,
+          openCount,
+          closedCount,
+          cycle: json.cycle,
+        });
         setTab('cycle');
-        await fetchCycleStatus();
+        if (json.errors?.length > 0) {
+          setExecuteError(`일부 실패: ${json.errors.join(', ')}`);
+        }
       } else {
-        setExecuteError('이슈가 생성되지 않았습니다. GITHUB_TOKEN 환경변수를 확인하세요.');
+        setExecuteError(
+          json.errors?.join('\n') ||
+          'GITHUB_TOKEN 환경변수를 확인하세요. 이슈 생성에 실패했습니다.'
+        );
       }
     } catch (e) {
       setExecuteError((e as Error).message);
@@ -335,7 +348,6 @@ export default function DashboardPage() {
                   {planLoading ? '분석 중...' : plan ? '플랜 재생성' : '플랜 생성'}
                 </button>
               </div>
-
               {!plan ? (
                 <p className="text-gray-500 text-sm">&quot;플랜 생성&quot; 버튼을 눌러 Gemini AI 전략 분석을 시작하세요.</p>
               ) : (
@@ -388,13 +400,11 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-
                   {executeError && (
                     <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-4">
                       <p className="text-red-400 text-sm">⚠️ {executeError}</p>
                     </div>
                   )}
-
                   <div className="pt-2 border-t border-gray-700">
                     <button onClick={executeIssues} disabled={executing}
                       className="w-full py-3 text-sm font-medium bg-green-700 hover:bg-green-600 rounded-lg disabled:opacity-50 transition-colors">
@@ -418,7 +428,7 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {!cycleStatus?.hasCycle ? (
+            {!cycleStatus?.hasCycle || !cycleStatus.cycle?.issues.length ? (
               <div className="text-center py-16 text-gray-500">
                 <p className="text-4xl mb-4">🤖</p>
                 <p>아직 사이클이 없습니다.</p>
@@ -426,30 +436,28 @@ export default function DashboardPage() {
               </div>
             ) : (
               <>
-                {cycleStatus.cycle && cycleStatus.cycle.issues.length > 0 && (
-                  <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <p className="text-sm text-gray-400">전체 진행률</p>
-                        <p className="text-2xl font-bold mt-1">
-                          {cycleStatus.closedCount ?? 0}
-                          <span className="text-gray-500 font-normal text-lg"> / {cycleStatus.cycle.issues.length} 완료</span>
-                        </p>
-                      </div>
-                      {cycleStatus.allDone ? (
-                        <span className="px-4 py-2 bg-green-700 rounded-lg text-sm font-medium">✅ 사이클 완료!</span>
-                      ) : (
-                        <span className="text-sm text-yellow-400">{cycleStatus.openCount}개 진행 중</span>
-                      )}
+                <div className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-sm text-gray-400">전체 진행률</p>
+                      <p className="text-2xl font-bold mt-1">
+                        {cycleStatus.closedCount ?? 0}
+                        <span className="text-gray-500 font-normal text-lg"> / {cycleStatus.cycle.issues.length} 완료</span>
+                      </p>
                     </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div
-                        className="bg-green-500 h-2 rounded-full transition-all"
-                        style={{ width: `${((cycleStatus.closedCount ?? 0) / cycleStatus.cycle.issues.length) * 100}%` }}
-                      />
-                    </div>
+                    {cycleStatus.allDone ? (
+                      <span className="px-4 py-2 bg-green-700 rounded-lg text-sm font-medium">✅ 사이클 완료!</span>
+                    ) : (
+                      <span className="text-sm text-yellow-400">{cycleStatus.openCount}개 진행 중</span>
+                    )}
                   </div>
-                )}
+                  <div className="w-full bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-green-500 h-2 rounded-full transition-all"
+                      style={{ width: `${((cycleStatus.closedCount ?? 0) / cycleStatus.cycle.issues.length) * 100}%` }}
+                    />
+                  </div>
+                </div>
 
                 {(['action', 'plan', 'warning'] as const).map((cat) => {
                   const items = cycleStatus.cycle?.issues.filter((i) => i.category === cat) ?? [];
@@ -460,8 +468,7 @@ export default function DashboardPage() {
                       <h3 className={`text-sm font-semibold mb-3 ${style.color.split(' ')[0]}`}>{style.label}</h3>
                       <div className="space-y-2">
                         {items.map((issue) => (
-                          <div key={issue.url}
-                            className={`border rounded-lg p-4 flex items-start gap-4 ${style.color}`}>
+                          <div key={issue.url} className={`border rounded-lg p-4 flex items-start gap-4 ${style.color}`}>
                             <div className="mt-0.5">
                               {issue.status === 'closed'
                                 ? <span className="text-green-400 text-lg">✅</span>
