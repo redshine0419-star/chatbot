@@ -8,6 +8,11 @@ const SERVICES = [
   { id: 'askhistory', name: 'AskHistory', url: 'https://askhistory.me', color: 'bg-purple-500' },
 ]
 
+const SERVICE_OPTIONS = [
+  { id: 'general', name: '공통' },
+  ...SERVICES,
+]
+
 const CATEGORY_STYLES = {
   action: { label: '핵심 액션', bg: 'bg-blue-50 border-blue-200', badge: 'bg-blue-100 text-blue-700', stepBg: 'bg-blue-50' },
   plan: { label: '2주 플랜', bg: 'bg-green-50 border-green-200', badge: 'bg-green-100 text-green-700', stepBg: 'bg-green-50' },
@@ -31,6 +36,10 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
+function toKRW(usd: number) {
+  return Math.round(usd * 1450).toLocaleString()
+}
+
 export default function DashboardPage() {
   const [tab, setTab] = useState<TabKey>('status')
   const [statsData, setStatsData] = useState<any>(null)
@@ -47,6 +56,14 @@ export default function DashboardPage() {
   const [speaking, setSpeaking] = useState(false)
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null)
 
+  // Cost ledger state
+  const [costMonth, setCostMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [costs, setCosts] = useState<any[]>([])
+  const [costsLoading, setCostsLoading] = useState(false)
+  const [costForm, setCostForm] = useState({ service: 'general', item: '', amount: '', currency: 'USD', note: '' })
+  const [costAdding, setCostAdding] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+
   useEffect(() => {
     fetch('/api/dashboard/stats')
       .then(r => r.json())
@@ -58,7 +75,12 @@ export default function DashboardPage() {
   useEffect(() => {
     if (tab === 'cycle' && !cycle) loadCycle()
     if (tab === 'ideas') loadIdeas()
+    if (tab === 'arch') loadCosts(costMonth)
   }, [tab])
+
+  useEffect(() => {
+    if (tab === 'arch') loadCosts(costMonth)
+  }, [costMonth])
 
   async function loadCycle() {
     setCycleLoading(true)
@@ -75,6 +97,41 @@ export default function DashboardPage() {
     const res = await fetch('/api/dashboard/ideas')
     const data = await res.json()
     setIdeas(Object.fromEntries(Object.entries(data).map(([k, v]: any) => [k, v.content || ''])))
+  }
+
+  async function loadCosts(month: string) {
+    setCostsLoading(true)
+    try {
+      const res = await fetch(`/api/dashboard/costs?month=${month}`)
+      setCosts(await res.json())
+    } catch {
+      setCosts([])
+    } finally {
+      setCostsLoading(false)
+    }
+  }
+
+  async function addCost() {
+    if (!costForm.item || !costForm.amount) return
+    setCostAdding(true)
+    try {
+      const res = await fetch('/api/dashboard/costs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...costForm, month: costMonth, amount: Number(costForm.amount) }),
+      })
+      const newRow = await res.json()
+      setCosts(prev => [...prev, newRow])
+      setCostForm({ service: 'general', item: '', amount: '', currency: 'USD', note: '' })
+      setShowAddForm(false)
+    } finally {
+      setCostAdding(false)
+    }
+  }
+
+  async function deleteCost(id: number) {
+    await fetch(`/api/dashboard/costs?id=${id}`, { method: 'DELETE' })
+    setCosts(prev => prev.filter(c => c.id !== id))
   }
 
   async function generatePlan() {
@@ -146,7 +203,6 @@ export default function DashboardPage() {
     setSpeaking(true)
   }
 
-  // Map stats by service key
   const statsMap: Record<string, any> = {}
   const ga4Map: Record<string, any> = {}
   if (statsData) {
@@ -158,22 +214,23 @@ export default function DashboardPage() {
   const doneCount = cycle?.doneCount ?? 0
   const totalCount = cycle?.totalCount ?? tasks.length
 
+  // Cost calculations
+  const usdTotal = costs.filter(c => c.currency === 'USD').reduce((s, c) => s + Number(c.amount), 0)
+  const krwTotal = costs.filter(c => c.currency === 'KRW').reduce((s, c) => s + Number(c.amount), 0)
+  const totalKRW = Math.round(usdTotal * 1450) + krwTotal
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto p-4">
         <h1 className="text-xl font-bold text-gray-900 mb-4">서비스 통합 대시보드</h1>
 
-        {/* Tabs — horizontal scroll on mobile */}
         <div className="overflow-x-auto mb-6 border-b border-gray-200">
           <div className="flex gap-1 min-w-max">
             {TABS.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setTab(key)}
+              <button key={key} onClick={() => setTab(key)}
                 className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
+                }`}>
                 {label}
               </button>
             ))}
@@ -349,11 +406,128 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ARCH */}
+        {/* ARCH + COST LEDGER */}
         {tab === 'arch' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* Monthly Cost Ledger */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h2 className="font-semibold text-gray-900 mb-1">💰 총 인프라 비용</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-gray-900">💰 월별 비용 장부</h2>
+                <div className="flex items-center gap-2">
+                  <input type="month" value={costMonth} onChange={e => setCostMonth(e.target.value)}
+                    className="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <button onClick={() => setShowAddForm(v => !v)}
+                    className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700">
+                    {showAddForm ? '취소' : '+ 추가'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Add form */}
+              {showAddForm && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100 grid grid-cols-2 gap-3">
+                  <div className="col-span-2 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">서비스</label>
+                      <select value={costForm.service} onChange={e => setCostForm(p => ({ ...p, service: e.target.value }))}
+                        className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        {SERVICE_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">통화</label>
+                      <select value={costForm.currency} onChange={e => setCostForm(p => ({ ...p, currency: e.target.value }))}
+                        className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                        <option value="USD">USD ($)</option>
+                        <option value="KRW">KRW (₩)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-gray-500 mb-1 block">항목명</label>
+                    <input value={costForm.item} onChange={e => setCostForm(p => ({ ...p, item: e.target.value }))}
+                      placeholder="예: Vercel Pro, Gemini API"
+                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">금액</label>
+                    <input type="number" value={costForm.amount} onChange={e => setCostForm(p => ({ ...p, amount: e.target.value }))}
+                      placeholder="0"
+                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">메모 (선택)</label>
+                    <input value={costForm.note} onChange={e => setCostForm(p => ({ ...p, note: e.target.value }))}
+                      placeholder="메모"
+                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="col-span-2">
+                    <button onClick={addCost} disabled={costAdding || !costForm.item || !costForm.amount}
+                      className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {costAdding ? '저장 중...' : '저장'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Cost table */}
+              {costsLoading ? (
+                <p className="text-sm text-gray-400">로딩 중...</p>
+              ) : costs.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">{costMonth} 등록된 비용이 없습니다. + 추가를 눌러 입력하세요.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left text-xs text-gray-500 font-medium py-2 pr-3">서비스</th>
+                        <th className="text-left text-xs text-gray-500 font-medium py-2 pr-3">항목</th>
+                        <th className="text-right text-xs text-gray-500 font-medium py-2 pr-3">금액</th>
+                        <th className="text-left text-xs text-gray-500 font-medium py-2 pr-3">메모</th>
+                        <th className="py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {costs.map(c => {
+                        const svc = SERVICE_OPTIONS.find(s => s.id === c.service)
+                        const dot = SERVICES.find(s => s.id === c.service)
+                        return (
+                          <tr key={c.id} className="hover:bg-gray-50">
+                            <td className="py-2 pr-3">
+                              <div className="flex items-center gap-1.5">
+                                {dot && <span className={`w-2 h-2 rounded-full ${dot.color} flex-shrink-0`} />}
+                                <span className="text-xs text-gray-600">{svc?.name || c.service}</span>
+                              </div>
+                            </td>
+                            <td className="py-2 pr-3 text-gray-900 font-medium">{c.item}</td>
+                            <td className="py-2 pr-3 text-right font-semibold tabular-nums">
+                              {c.currency === 'USD' ? `$${Number(c.amount).toFixed(2)}` : `₩${Number(c.amount).toLocaleString()}`}
+                            </td>
+                            <td className="py-2 pr-3 text-gray-400 text-xs">{c.note}</td>
+                            <td className="py-2">
+                              <button onClick={() => deleteCost(c.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Total */}
+              {costs.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-4 justify-end">
+                  {usdTotal > 0 && <div className="text-sm"><span className="text-gray-500">USD 합계 </span><span className="font-bold text-gray-900">${usdTotal.toFixed(2)}</span></div>}
+                  {krwTotal > 0 && <div className="text-sm"><span className="text-gray-500">KRW 합계 </span><span className="font-bold text-gray-900">₩{krwTotal.toLocaleString()}</span></div>}
+                  <div className="text-sm"><span className="text-gray-500">원화 환산 총계 </span><span className="font-bold text-blue-600">₩{totalKRW.toLocaleString()}</span><span className="text-xs text-gray-400 ml-1">(USD×1,450)</span></div>
+                </div>
+              )}
+            </div>
+
+            {/* Architecture overview */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h2 className="font-semibold text-gray-900 mb-1">🏗️ 예상 인프라 비용</h2>
               <p className="text-3xl font-bold text-blue-600">~$24/월 <span className="text-lg text-gray-400 font-normal">≈ ₩34,800</span></p>
               <p className="text-xs text-gray-400 mt-1">Vercel Pro $20 고정 + AI API 변동 ~$4</p>
             </div>
