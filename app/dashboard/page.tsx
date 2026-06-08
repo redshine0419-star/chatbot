@@ -13,6 +13,15 @@ const SERVICE_OPTIONS = [
   ...SERVICES,
 ]
 
+const COST_PRESETS = [
+  { label: 'Gemini Pro', item: 'Gemini Pro 사용료', service: 'general', currency: 'USD' },
+  { label: 'Claude Code', item: 'Claude Code 사용료', service: 'general', currency: 'USD' },
+  { label: 'Vercel Pro', item: 'Vercel Pro', service: 'marketerops', currency: 'USD' },
+  { label: 'Neon DB', item: 'Neon DB', service: 'general', currency: 'USD' },
+  { label: 'Google Ads', item: 'Google Ads', service: 'general', currency: 'USD' },
+  { label: 'AdSense 수입', item: 'AdSense 광고 수입', service: 'general', currency: 'KRW' },
+]
+
 const CATEGORY_STYLES = {
   action: { label: '핵심 액션', bg: 'bg-blue-50 border-blue-200', badge: 'bg-blue-100 text-blue-700', stepBg: 'bg-blue-50' },
   plan: { label: '2주 플랜', bg: 'bg-green-50 border-green-200', badge: 'bg-green-100 text-green-700', stepBg: 'bg-green-50' },
@@ -36,10 +45,6 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
-function toKRW(usd: number) {
-  return Math.round(usd * 1450).toLocaleString()
-}
-
 export default function DashboardPage() {
   const [tab, setTab] = useState<TabKey>('status')
   const [statsData, setStatsData] = useState<any>(null)
@@ -56,7 +61,6 @@ export default function DashboardPage() {
   const [speaking, setSpeaking] = useState(false)
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null)
 
-  // Cost ledger state
   const [costMonth, setCostMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [costs, setCosts] = useState<any[]>([])
   const [costsLoading, setCostsLoading] = useState(false)
@@ -84,13 +88,8 @@ export default function DashboardPage() {
 
   async function loadCycle() {
     setCycleLoading(true)
-    try {
-      const res = await fetch('/api/dashboard/cycle-status')
-      const data = await res.json()
-      setCycle(data)
-    } finally {
-      setCycleLoading(false)
-    }
+    try { const res = await fetch('/api/dashboard/cycle-status'); setCycle(await res.json()) }
+    finally { setCycleLoading(false) }
   }
 
   async function loadIdeas() {
@@ -101,14 +100,9 @@ export default function DashboardPage() {
 
   async function loadCosts(month: string) {
     setCostsLoading(true)
-    try {
-      const res = await fetch(`/api/dashboard/costs?month=${month}`)
-      setCosts(await res.json())
-    } catch {
-      setCosts([])
-    } finally {
-      setCostsLoading(false)
-    }
+    try { setCosts(await (await fetch(`/api/dashboard/costs?month=${month}`)).json()) }
+    catch { setCosts([]) }
+    finally { setCostsLoading(false) }
   }
 
   async function addCost() {
@@ -120,13 +114,10 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...costForm, month: costMonth, amount: Number(costForm.amount) }),
       })
-      const newRow = await res.json()
-      setCosts(prev => [...prev, newRow])
+      setCosts(prev => [...prev, await res.json()])
       setCostForm({ service: 'general', item: '', amount: '', currency: 'USD', note: '' })
       setShowAddForm(false)
-    } finally {
-      setCostAdding(false)
-    }
+    } finally { setCostAdding(false) }
   }
 
   async function deleteCost(id: number) {
@@ -141,22 +132,17 @@ export default function DashboardPage() {
       const data = await res.json()
       if (!res.ok) { alert('플랜 생성 실패: ' + (data.error || res.status)); return }
       await loadCycle()
-    } finally {
-      setPlanLoading(false)
-    }
+    } finally { setPlanLoading(false) }
   }
 
   async function toggleTask(taskId: string) {
     if (!cycle?.cycle?.id) return
     const res = await fetch('/api/dashboard/task-toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cycleId: cycle.cycle.id, taskId }),
     })
     const data = await res.json()
-    if (data.ok) {
-      setCycle((prev: any) => ({ ...prev, cycle: { ...prev.cycle, tasks: data.tasks }, doneCount: data.doneCount, allDone: data.allDone }))
-    }
+    if (data.ok) setCycle((prev: any) => ({ ...prev, cycle: { ...prev.cycle, tasks: data.tasks }, doneCount: data.doneCount, allDone: data.allDone }))
   }
 
   function toggleExpand(id: string) {
@@ -165,8 +151,7 @@ export default function DashboardPage() {
 
   async function saveIdea(serviceId: string) {
     await fetch('/api/dashboard/ideas', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ service: serviceId, content: ideaDraft }),
     })
     setIdeas(prev => ({ ...prev, [serviceId]: ideaDraft }))
@@ -174,33 +159,23 @@ export default function DashboardPage() {
   }
 
   function downloadIdea(serviceId: string) {
-    const blob = new Blob([ideas[serviceId] || ''], { type: 'text/plain' })
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `${serviceId}-ideas.txt`
-    a.click()
+    a.href = URL.createObjectURL(new Blob([ideas[serviceId] || ''], { type: 'text/plain' }))
+    a.download = `${serviceId}-ideas.txt`; a.click()
   }
 
   async function loadBriefing() {
     setBriefingLoading(true)
-    try {
-      const res = await fetch('/api/dashboard/briefing')
-      const data = await res.json()
-      setBriefing(data.briefing || '')
-    } finally {
-      setBriefingLoading(false)
-    }
+    try { setBriefing((await (await fetch('/api/dashboard/briefing')).json()).briefing || '') }
+    finally { setBriefingLoading(false) }
   }
 
   function speak() {
     if (!briefing) return
     if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return }
     const u = new SpeechSynthesisUtterance(briefing)
-    u.lang = 'ko-KR'; u.rate = 1.0
-    u.onend = () => setSpeaking(false)
-    synthRef.current = u
-    window.speechSynthesis.speak(u)
-    setSpeaking(true)
+    u.lang = 'ko-KR'; u.rate = 1.0; u.onend = () => setSpeaking(false)
+    synthRef.current = u; window.speechSynthesis.speak(u); setSpeaking(true)
   }
 
   const statsMap: Record<string, any> = {}
@@ -213,8 +188,6 @@ export default function DashboardPage() {
   const tasks = cycle?.cycle?.tasks || []
   const doneCount = cycle?.doneCount ?? 0
   const totalCount = cycle?.totalCount ?? tasks.length
-
-  // Cost calculations
   const usdTotal = costs.filter(c => c.currency === 'USD').reduce((s, c) => s + Number(c.amount), 0)
   const krwTotal = costs.filter(c => c.currency === 'KRW').reduce((s, c) => s + Number(c.amount), 0)
   const totalKRW = Math.round(usdTotal * 1450) + krwTotal
@@ -230,9 +203,7 @@ export default function DashboardPage() {
               <button key={key} onClick={() => setTab(key)}
                 className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}>
-                {label}
-              </button>
+                }`}>{label}</button>
             ))}
           </div>
         </div>
@@ -241,8 +212,7 @@ export default function DashboardPage() {
         {tab === 'status' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(s => {
-              const d = statsMap[s.id]
-              const g = ga4Map[s.id]
+              const d = statsMap[s.id]; const g = ga4Map[s.id]
               return (
                 <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -250,30 +220,14 @@ export default function DashboardPage() {
                     <h2 className="font-semibold text-gray-900">{s.name}</h2>
                     <a href={s.url} target="_blank" className="ml-auto text-xs text-gray-400 hover:underline">{s.url}</a>
                   </div>
-                  {statsLoading ? (
-                    <p className="text-sm text-gray-400">로딩 중...</p>
-                  ) : (
+                  {statsLoading ? <p className="text-sm text-gray-400">로딩 중...</p> : (
                     <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <div className="text-gray-500 text-xs mb-1">전체 블로그</div>
-                        <div className="font-bold text-lg">{d?.blog?.total ?? d?.totalPosts ?? '-'}</div>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-3">
-                        <div className="text-gray-500 text-xs mb-1">이번 주 신규</div>
-                        <div className="font-bold text-lg">{d?.blog?.recentWeek ?? d?.weeklyPosts ?? '-'}</div>
-                      </div>
-                      {g && (
-                        <>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <div className="text-gray-500 text-xs mb-1">GA4 7일 사용자</div>
-                            <div className="font-bold text-lg">{g.users?.toLocaleString()}</div>
-                          </div>
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <div className="text-gray-500 text-xs mb-1">GA4 7일 세션</div>
-                            <div className="font-bold text-lg">{g.sessions?.toLocaleString()}</div>
-                          </div>
-                        </>
-                      )}
+                      <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">전체 블로그</div><div className="font-bold text-lg">{d?.blog?.total ?? d?.totalPosts ?? '-'}</div></div>
+                      <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">이번 주 신규</div><div className="font-bold text-lg">{d?.blog?.recentWeek ?? d?.weeklyPosts ?? '-'}</div></div>
+                      {g && (<>
+                        <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 사용자</div><div className="font-bold text-lg">{g.users?.toLocaleString()}</div></div>
+                        <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 세션</div><div className="font-bold text-lg">{g.sessions?.toLocaleString()}</div></div>
+                      </>)}
                       {d?.error && <div className="col-span-2 text-xs text-red-400">{d.error}</div>}
                     </div>
                   )}
@@ -296,13 +250,8 @@ export default function DashboardPage() {
                 {planLoading ? '생성 중...' : '🤖 새 AI 플랜 생성'}
               </button>
             </div>
-            {cycleLoading ? (
-              <p className="text-gray-500">로딩 중...</p>
-            ) : !cycle?.hasCycle ? (
-              <div className="text-center py-12 text-gray-400">
-                <p className="text-4xl mb-3">📋</p>
-                <p>AI 플랜을 생성하면 태스크 체크리스트가 표시됩니다.</p>
-              </div>
+            {cycleLoading ? <p className="text-gray-500">로딩 중...</p> : !cycle?.hasCycle ? (
+              <div className="text-center py-12 text-gray-400"><p className="text-4xl mb-3">📋</p><p>AI 플랜을 생성하면 태스크 체크리스트가 표시됩니다.</p></div>
             ) : (
               <div className="space-y-3">
                 {(['action', 'plan', 'warning'] as const).map(cat => {
@@ -319,8 +268,7 @@ export default function DashboardPage() {
                           return (
                             <div key={task.id} className={`border rounded-xl overflow-hidden ${style.bg}`}>
                               <div className="flex items-start gap-3 p-4">
-                                <input type="checkbox" checked={task.done} onChange={() => toggleTask(task.id)}
-                                  className="mt-1 w-4 h-4 cursor-pointer flex-shrink-0" />
+                                <input type="checkbox" checked={task.done} onChange={() => toggleTask(task.id)} className="mt-1 w-4 h-4 cursor-pointer flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap mb-1">
                                     {svc && <span className={`w-2 h-2 rounded-full ${svc.color} flex-shrink-0`} />}
@@ -331,8 +279,7 @@ export default function DashboardPage() {
                                   <p className="text-sm text-gray-600 mt-1">{task.body}</p>
                                 </div>
                                 {(task.steps?.length > 0 || task.goal) && (
-                                  <button onClick={() => toggleExpand(task.id)}
-                                    className="flex-shrink-0 text-gray-400 hover:text-gray-600 text-lg">
+                                  <button onClick={() => toggleExpand(task.id)} className="flex-shrink-0 text-gray-400 hover:text-gray-600 text-lg">
                                     {isExpanded ? '▲' : '▼'}
                                   </button>
                                 )}
@@ -382,8 +329,7 @@ export default function DashboardPage() {
                   <h2 className="font-semibold text-gray-900">{s.name}</h2>
                   <div className="ml-auto flex gap-2">
                     <button onClick={() => downloadIdea(s.id)} className="text-xs text-gray-400 hover:text-gray-600">💾</button>
-                    <button onClick={() => { setEditingIdea(s.id); setIdeaDraft(ideas[s.id] || '') }}
-                      className="text-xs text-blue-500 hover:text-blue-700">✏️ 편집</button>
+                    <button onClick={() => { setEditingIdea(s.id); setIdeaDraft(ideas[s.id] || '') }} className="text-xs text-blue-500 hover:text-blue-700">✏️ 편집</button>
                   </div>
                 </div>
                 {editingIdea === s.id ? (
@@ -406,10 +352,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ARCH + COST LEDGER */}
+        {/* ARCH + COST */}
         {tab === 'arch' && (
           <div className="space-y-6">
-            {/* Monthly Cost Ledger */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-900">💰 월별 비용 장부</h2>
@@ -423,10 +368,27 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Add form */}
               {showAddForm && (
-                <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100 grid grid-cols-2 gap-3">
-                  <div className="col-span-2 grid grid-cols-2 gap-3">
+                <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
+                  {/* Presets */}
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">빠른 선택</p>
+                    <div className="flex flex-wrap gap-2">
+                      {COST_PRESETS.map(p => (
+                        <button key={p.label}
+                          onClick={() => setCostForm(prev => ({ ...prev, item: p.item, service: p.service, currency: p.currency }))}
+                          className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                            costForm.item === p.item
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400'
+                          }`}>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-gray-500 mb-1 block">서비스</label>
                       <select value={costForm.service} onChange={e => setCostForm(p => ({ ...p, service: e.target.value }))}
@@ -443,38 +405,37 @@ export default function DashboardPage() {
                       </select>
                     </div>
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <label className="text-xs text-gray-500 mb-1 block">항목명</label>
                     <input value={costForm.item} onChange={e => setCostForm(p => ({ ...p, item: e.target.value }))}
-                      placeholder="예: Vercel Pro, Gemini API"
+                      placeholder="예: Vercel Pro, Gemini Pro 사용료"
                       className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
                   </div>
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">금액</label>
-                    <input type="number" value={costForm.amount} onChange={e => setCostForm(p => ({ ...p, amount: e.target.value }))}
-                      placeholder="0"
-                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">금액</label>
+                      <input type="number" value={costForm.amount} onChange={e => setCostForm(p => ({ ...p, amount: e.target.value }))}
+                        placeholder="0"
+                        className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">메모 (선택)</label>
+                      <input value={costForm.note} onChange={e => setCostForm(p => ({ ...p, note: e.target.value }))}
+                        placeholder="메모"
+                        className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-gray-500 mb-1 block">메모 (선택)</label>
-                    <input value={costForm.note} onChange={e => setCostForm(p => ({ ...p, note: e.target.value }))}
-                      placeholder="메모"
-                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                  </div>
-                  <div className="col-span-2">
-                    <button onClick={addCost} disabled={costAdding || !costForm.item || !costForm.amount}
-                      className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
-                      {costAdding ? '저장 중...' : '저장'}
-                    </button>
-                  </div>
+                  <button onClick={addCost} disabled={costAdding || !costForm.item || !costForm.amount}
+                    className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {costAdding ? '저장 중...' : '저장'}
+                  </button>
                 </div>
               )}
 
-              {/* Cost table */}
               {costsLoading ? (
                 <p className="text-sm text-gray-400">로딩 중...</p>
               ) : costs.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-6">{costMonth} 등록된 비용이 없습니다. + 추가를 눌러 입력하세요.</p>
+                <p className="text-sm text-gray-400 text-center py-6">{costMonth} 등록된 비용이 없습니다.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -504,9 +465,7 @@ export default function DashboardPage() {
                               {c.currency === 'USD' ? `$${Number(c.amount).toFixed(2)}` : `₩${Number(c.amount).toLocaleString()}`}
                             </td>
                             <td className="py-2 pr-3 text-gray-400 text-xs">{c.note}</td>
-                            <td className="py-2">
-                              <button onClick={() => deleteCost(c.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button>
-                            </td>
+                            <td className="py-2"><button onClick={() => deleteCost(c.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button></td>
                           </tr>
                         )
                       })}
@@ -515,17 +474,15 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Total */}
               {costs.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-4 justify-end">
-                  {usdTotal > 0 && <div className="text-sm"><span className="text-gray-500">USD 합계 </span><span className="font-bold text-gray-900">${usdTotal.toFixed(2)}</span></div>}
-                  {krwTotal > 0 && <div className="text-sm"><span className="text-gray-500">KRW 합계 </span><span className="font-bold text-gray-900">₩{krwTotal.toLocaleString()}</span></div>}
+                  {usdTotal > 0 && <div className="text-sm"><span className="text-gray-500">USD </span><span className="font-bold text-gray-900">${usdTotal.toFixed(2)}</span></div>}
+                  {krwTotal > 0 && <div className="text-sm"><span className="text-gray-500">KRW </span><span className="font-bold text-gray-900">₩{krwTotal.toLocaleString()}</span></div>}
                   <div className="text-sm"><span className="text-gray-500">원화 환산 총계 </span><span className="font-bold text-blue-600">₩{totalKRW.toLocaleString()}</span><span className="text-xs text-gray-400 ml-1">(USD×1,450)</span></div>
                 </div>
               )}
             </div>
 
-            {/* Architecture overview */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <h2 className="font-semibold text-gray-900 mb-1">🏗️ 예상 인프라 비용</h2>
               <p className="text-3xl font-bold text-blue-600">~$24/월 <span className="text-lg text-gray-400 font-normal">≈ ₩34,800</span></p>
