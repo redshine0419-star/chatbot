@@ -61,7 +61,7 @@ export default function DashboardPage() {
   const [speaking, setSpeaking] = useState(false)
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null)
 
-  const [costMonth, setCostMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const [costMonth, setCostMonth] = useState('')
   const [costs, setCosts] = useState<any[]>([])
   const [costsLoading, setCostsLoading] = useState(false)
   const [costForm, setCostForm] = useState({ service: 'general', item: '', amount: '', currency: 'USD', note: '' })
@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const [showAddForm, setShowAddForm] = useState(false)
 
   useEffect(() => {
+    setCostMonth(new Date().toISOString().slice(0, 7))
     fetch('/api/dashboard/stats')
       .then(r => r.json()).then(d => setStatsData(d)).catch(() => {})
       .finally(() => setStatsLoading(false))
@@ -77,10 +78,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (tab === 'cycle' && !cycle) loadCycle()
     if (tab === 'ideas') loadIdeas()
-    if (tab === 'arch') loadCosts(costMonth)
+    if (tab === 'arch' && costMonth) loadCosts(costMonth)
   }, [tab])
 
-  useEffect(() => { if (tab === 'arch') loadCosts(costMonth) }, [costMonth])
+  useEffect(() => { if (tab === 'arch' && costMonth) loadCosts(costMonth) }, [costMonth])
 
   async function loadCycle() {
     setCycleLoading(true)
@@ -204,7 +205,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* STATUS */}
         {tab === 'status' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(s => {
@@ -233,7 +233,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* CYCLE */}
         {tab === 'cycle' && (
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -315,7 +314,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* IDEAS */}
         {tab === 'ideas' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(s => (
@@ -348,10 +346,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ARCH + COST */}
         {tab === 'arch' && (
           <div className="space-y-6">
-            {/* Cost Ledger */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-900">💰 월별 비용 장부</h2>
@@ -468,7 +464,6 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Arch overview */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <h2 className="font-semibold text-gray-900 mb-1">🏗️ 예상 인프라 비용</h2>
               <p className="text-3xl font-bold text-blue-600">~$24/월 <span className="text-lg text-gray-400 font-normal">≈ ₩34,800</span></p>
@@ -488,7 +483,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* BRIEFING */}
         {tab === 'briefing' && (
           <div className="max-w-2xl">
             <div className="bg-white rounded-xl border border-gray-200 p-6">
