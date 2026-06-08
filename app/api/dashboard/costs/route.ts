@@ -3,22 +3,36 @@ import postgres from 'postgres'
 
 const sql = postgres(process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? '')
 
+async function ensureTable() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS dashboard_costs (
+      id SERIAL PRIMARY KEY,
+      month TEXT NOT NULL,
+      service TEXT NOT NULL DEFAULT 'general',
+      item TEXT NOT NULL,
+      amount NUMERIC(10,2) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `
+}
+
 export async function GET(req: NextRequest) {
+  await ensureTable()
   const month = req.nextUrl.searchParams.get('month')
   try {
-    let rows
-    if (month) {
-      rows = await sql`SELECT * FROM dashboard_costs WHERE month = ${month} ORDER BY created_at ASC`
-    } else {
-      rows = await sql`SELECT * FROM dashboard_costs ORDER BY month DESC, created_at ASC`
-    }
+    const rows = month
+      ? await sql`SELECT * FROM dashboard_costs WHERE month = ${month} ORDER BY created_at ASC`
+      : await sql`SELECT * FROM dashboard_costs ORDER BY month DESC, created_at ASC`
     return NextResponse.json(rows)
   } catch {
-    return NextResponse.json([], { status: 200 })
+    return NextResponse.json([])
   }
 }
 
 export async function POST(req: NextRequest) {
+  await ensureTable()
   const { month, service, item, amount, currency, note } = await req.json()
   if (!month || !item || amount == null) {
     return NextResponse.json({ error: 'month, item, amount required' }, { status: 400 })
