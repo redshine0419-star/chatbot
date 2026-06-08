@@ -45,6 +45,16 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
+function getPostDate(p: any): string {
+  const raw = p.createdAt || p.publishedAt || p.date || ''
+  if (!raw) return '-'
+  try {
+    return new Date(raw).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace('. ', '/').replace('.', '')
+  } catch {
+    return String(raw).slice(0, 10)
+  }
+}
+
 export default function DashboardPage() {
   const [tab, setTab] = useState<TabKey>('status')
   const [statsData, setStatsData] = useState<any>(null)
@@ -209,6 +219,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(s => {
               const d = statsMap[s.id]; const g = ga4Map[s.id]
+              const recentPosts: any[] = (d?.blog?.recent || []).slice(0, 3)
               return (
                 <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-5">
                   <div className="flex items-center gap-2 mb-3">
@@ -217,15 +228,30 @@ export default function DashboardPage() {
                     <a href={s.url} target="_blank" className="ml-auto text-xs text-gray-400 hover:underline">{s.url}</a>
                   </div>
                   {statsLoading ? <p className="text-sm text-gray-400">로딩 중...</p> : (
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">전체 블로그</div><div className="font-bold text-lg">{d?.blog?.total ?? d?.totalPosts ?? '-'}</div></div>
-                      <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">이번 주 신규</div><div className="font-bold text-lg">{d?.blog?.recentWeek ?? d?.weeklyPosts ?? '-'}</div></div>
-                      {g && (<>
-                        <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 사용자</div><div className="font-bold text-lg">{g.users?.toLocaleString()}</div></div>
-                        <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 세션</div><div className="font-bold text-lg">{g.sessions?.toLocaleString()}</div></div>
-                      </>)}
-                      {d?.error && <div className="col-span-2 text-xs text-red-400">{d.error}</div>}
-                    </div>
+                    <>
+                      <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                        <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">전체 블로그</div><div className="font-bold text-lg">{d?.blog?.total ?? d?.totalPosts ?? '-'}</div></div>
+                        <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">이번 주 신규</div><div className="font-bold text-lg">{d?.blog?.recentWeek ?? d?.weeklyPosts ?? '-'}</div></div>
+                        {g && (<>
+                          <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 사용자</div><div className="font-bold text-lg">{g.users?.toLocaleString()}</div></div>
+                          <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 세션</div><div className="font-bold text-lg">{g.sessions?.toLocaleString()}</div></div>
+                        </>)}
+                        {d?.error && <div className="col-span-2 text-xs text-red-400">{d.error}</div>}
+                      </div>
+                      {recentPosts.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">최근 포스트</p>
+                          <ul className="space-y-1.5">
+                            {recentPosts.map((p, i) => (
+                              <li key={i} className="flex items-start gap-2">
+                                <span className="text-xs text-gray-400 tabular-nums whitespace-nowrap mt-0.5 min-w-[36px]">{getPostDate(p)}</span>
+                                <span className="text-xs text-gray-700 leading-snug line-clamp-2">{p.title}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )
