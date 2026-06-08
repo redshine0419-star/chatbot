@@ -70,9 +70,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetch('/api/dashboard/stats')
-      .then(r => r.json())
-      .then(d => setStatsData(d))
-      .catch(() => {})
+      .then(r => r.json()).then(d => setStatsData(d)).catch(() => {})
       .finally(() => setStatsLoading(false))
   }, [])
 
@@ -82,19 +80,16 @@ export default function DashboardPage() {
     if (tab === 'arch') loadCosts(costMonth)
   }, [tab])
 
-  useEffect(() => {
-    if (tab === 'arch') loadCosts(costMonth)
-  }, [costMonth])
+  useEffect(() => { if (tab === 'arch') loadCosts(costMonth) }, [costMonth])
 
   async function loadCycle() {
     setCycleLoading(true)
-    try { const res = await fetch('/api/dashboard/cycle-status'); setCycle(await res.json()) }
+    try { setCycle(await (await fetch('/api/dashboard/cycle-status')).json()) }
     finally { setCycleLoading(false) }
   }
 
   async function loadIdeas() {
-    const res = await fetch('/api/dashboard/ideas')
-    const data = await res.json()
+    const data = await (await fetch('/api/dashboard/ideas')).json()
     setIdeas(Object.fromEntries(Object.entries(data).map(([k, v]: any) => [k, v.content || ''])))
   }
 
@@ -114,7 +109,8 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...costForm, month: costMonth, amount: Number(costForm.amount) }),
       })
-      setCosts(prev => [...prev, await res.json()])
+      const newRow = await res.json()
+      setCosts(prev => [...prev, newRow])
       setCostForm({ service: 'general', item: '', amount: '', currency: 'USD', note: '' })
       setShowAddForm(false)
     } finally { setCostAdding(false) }
@@ -355,6 +351,7 @@ export default function DashboardPage() {
         {/* ARCH + COST */}
         {tab === 'arch' && (
           <div className="space-y-6">
+            {/* Cost Ledger */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-900">💰 월별 비용 장부</h2>
@@ -370,7 +367,6 @@ export default function DashboardPage() {
 
               {showAddForm && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
-                  {/* Presets */}
                   <div>
                     <p className="text-xs text-gray-400 mb-2">빠른 선택</p>
                     <div className="flex flex-wrap gap-2">
@@ -378,16 +374,12 @@ export default function DashboardPage() {
                         <button key={p.label}
                           onClick={() => setCostForm(prev => ({ ...prev, item: p.item, service: p.service, currency: p.currency }))}
                           className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
-                            costForm.item === p.item
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400'
-                          }`}>
-                          {p.label}
+                            costForm.item === p.item ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400'
+                          }`}>{p.label}
                         </button>
                       ))}
                     </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-gray-500 mb-1 block">서비스</label>
@@ -454,16 +446,9 @@ export default function DashboardPage() {
                         const dot = SERVICES.find(s => s.id === c.service)
                         return (
                           <tr key={c.id} className="hover:bg-gray-50">
-                            <td className="py-2 pr-3">
-                              <div className="flex items-center gap-1.5">
-                                {dot && <span className={`w-2 h-2 rounded-full ${dot.color} flex-shrink-0`} />}
-                                <span className="text-xs text-gray-600">{svc?.name || c.service}</span>
-                              </div>
-                            </td>
+                            <td className="py-2 pr-3"><div className="flex items-center gap-1.5">{dot && <span className={`w-2 h-2 rounded-full ${dot.color} flex-shrink-0`} />}<span className="text-xs text-gray-600">{svc?.name || c.service}</span></div></td>
                             <td className="py-2 pr-3 text-gray-900 font-medium">{c.item}</td>
-                            <td className="py-2 pr-3 text-right font-semibold tabular-nums">
-                              {c.currency === 'USD' ? `$${Number(c.amount).toFixed(2)}` : `₩${Number(c.amount).toLocaleString()}`}
-                            </td>
+                            <td className="py-2 pr-3 text-right font-semibold tabular-nums">{c.currency === 'USD' ? `$${Number(c.amount).toFixed(2)}` : `₩${Number(c.amount).toLocaleString()}`}</td>
                             <td className="py-2 pr-3 text-gray-400 text-xs">{c.note}</td>
                             <td className="py-2"><button onClick={() => deleteCost(c.id)} className="text-gray-300 hover:text-red-400 text-xs">✕</button></td>
                           </tr>
@@ -483,6 +468,7 @@ export default function DashboardPage() {
               )}
             </div>
 
+            {/* Arch overview */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <h2 className="font-semibold text-gray-900 mb-1">🏗️ 예상 인프라 비용</h2>
               <p className="text-3xl font-bold text-blue-600">~$24/월 <span className="text-lg text-gray-400 font-normal">≈ ₩34,800</span></p>
@@ -519,8 +505,7 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mb-4">{briefing}</p>
                   <div className="flex gap-3">
-                    <button onClick={speak}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium ${speaking ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                    <button onClick={speak} className={`px-4 py-2 rounded-lg text-sm font-medium ${speaking ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                       {speaking ? '⏹ 중지' : '🔊 읽어주기'}
                     </button>
                     <button onClick={loadBriefing} disabled={briefingLoading}
