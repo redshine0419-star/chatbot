@@ -35,8 +35,66 @@ const ARCH_DATA = [
   { id: 'askhistory', name: 'AskHistory', stack: 'Next.js 14 · Drizzle · Neon · Gemini 2.5 Flash · Vercel', cost: '$0 (Vercel Hobby) + ~$0.2 AI', notes: 'AI 세계사 학습, Q&A 챗봇' },
 ]
 
+const AUTOMATION_PHASES = [
+  {
+    phase: '1단계 — 롱테일 SEO 콘텐츠 자동화',
+    color: 'bg-blue-50 border-blue-200',
+    badge: 'bg-blue-100 text-blue-700',
+    items: [
+      { label: '키워드 클러스터 테이블 구축', detail: 'blog_keywords 테이블에 cluster 컬럼 추가, 서비스별 타깃 키워드 정의', done: true },
+      { label: '크론 클러스터 균형 키워드 선택', detail: 'pickClusterBalancedKeyword() 구현 — 최소 커버리지 클러스터 우선 선택', done: true },
+      { label: '내부링크 자동 삽입', detail: 'getRecentPostsForLinking() — 발행 시 관련 포스트 2~3개 자동 링크', done: true },
+      { label: '서비스 CTA 자동 삽입', detail: '각 서비스 CTA 블록 (UTM 포함) 포스트 하단 자동 추가', done: true },
+      { label: 'Slack 발행 알림', detail: '발행 완료 시 Slack Webhook으로 제목·시대·URL 전송', done: true },
+    ],
+  },
+  {
+    phase: '2단계 — SNS & GSC 최적화 자동화',
+    color: 'bg-green-50 border-green-200',
+    badge: 'bg-green-100 text-green-700',
+    items: [
+      { label: 'X(Twitter) 자동 트윗 연동', detail: 'OAuth 1.0a HMAC-SHA1 서명, 블로그 발행 후 자동 트윗 — 4개 서비스 모두', done: true },
+      { label: 'UTM 파라미터 자동 삽입', detail: 'CTA URL에 utm_source=blog&utm_medium=cta&utm_campaign=organic 적용', done: true },
+      { label: 'AdSense 수익 최적화 크론', detail: 'GA4 Data API 연동 — 체류시간 상위 20% 페이지 vs 이탈률 80%+ 페이지 분석', done: true },
+      { label: 'A/B 테스트 자동화', detail: 'blog_ab_tests 테이블 — 7일 후 CTR 비교, 낮은 버전 자동 교체', done: true },
+    ],
+  },
+  {
+    phase: '3단계 — 리텐션 & 개인화 자동화',
+    color: 'bg-purple-50 border-purple-200',
+    badge: 'bg-purple-100 text-purple-700',
+    items: [
+      { label: '개인화 추천 이메일 자동화 (FlavorSync)', detail: 'user_favorites 기반 — 즐겨찾기 없는 인기 레시피 2개 Resend 자동 발송 (매주 수)', done: true },
+      { label: '취약 시대 복습 알림 (AskHistory)', detail: '최근 7일 퀴즈 로그 분석 → 최소 커버리지 시대 관련 포스트 2개 이메일 발송', done: true },
+      { label: '월간 마케팅 리뷰 자동화', detail: '매월 1일 크론 — 포스트 수·구독자 증가 집계, Gemini 3줄 요약 → Slack', done: true },
+    ],
+  },
+  {
+    phase: '4단계 — 측정 & 통합 대시보드',
+    color: 'bg-orange-50 border-orange-200',
+    badge: 'bg-orange-100 text-orange-700',
+    items: [
+      { label: '다서비스 통합 마케팅 현황 패널', detail: 'MarketerOps WorkOpsTab에 MarketingStatsSection 추가 — 4개 서비스 블로그·구독자 수 실시간 표시', done: true },
+      { label: '마케팅 자동화 현황 대시보드 (이 페이지)', detail: 'https://chatbot-mu-lac-59.vercel.app/dashboard 에 완료된 자동화 항목 전체 표시', done: true },
+    ],
+  },
+]
+
+const CRON_SCHEDULE = [
+  { service: 'FlavorSync', path: '/api/generate-blog-post', schedule: '매일 09:00 UTC', desc: '블로그 자동 발행 + 트윗' },
+  { service: 'TaskGrid', path: '/api/cron/blog', schedule: '매일 00:00 UTC', desc: '블로그 자동 발행 (KO+EN) + 트윗' },
+  { service: 'AskHistory', path: '/api/cron/generate', schedule: '매일 02:00 UTC', desc: '포스트 5개 자동 발행 + 트윗' },
+  { service: 'MarketerOps', path: '/api/blog/cron', schedule: '매일 00:00 UTC', desc: '예약 블로그 발행' },
+  { service: '전체', path: '/api/cron/adsense-report', schedule: '매월 1일 03:00 UTC', desc: 'GA4 기반 AdSense 최적화 리포트' },
+  { service: 'FlavorSync', path: '/api/cron/ab-test-resolve', schedule: '매주 월 04:00 UTC', desc: 'A/B 테스트 자동 해결' },
+  { service: 'FlavorSync', path: '/api/cron/monthly-review', schedule: '매월 1일 05:00 UTC', desc: '월간 마케팅 리뷰' },
+  { service: 'FlavorSync', path: '/api/cron/personalized-recs', schedule: '매주 수 10:00 UTC', desc: '개인화 레시피 추천 이메일' },
+  { service: 'AskHistory', path: '/api/cron/weak-era-alert', schedule: '매주 화 11:00 UTC', desc: '취약 시대 복습 알림 이메일' },
+]
+
 const TABS = [
   { key: 'status', label: '현황' },
+  { key: 'automation', label: '마케팅 자동화' },
   { key: 'cycle', label: 'AI PM' },
   { key: 'ideas', label: '아이디어' },
   { key: 'arch', label: '비용·아키텍처' },
@@ -259,6 +317,76 @@ export default function DashboardPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {tab === 'automation' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center gap-3 mb-1">
+                <span className="text-2xl">🚀</span>
+                <div>
+                  <h2 className="font-bold text-gray-900">마케팅 자동화 로드맵 진행 현황</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">4개 서비스 (MarketerOps · FlavorSync · TaskGrid · AskHistory) 통합</p>
+                </div>
+                <div className="ml-auto text-right">
+                  <div className="text-2xl font-bold text-green-600">{AUTOMATION_PHASES.flatMap(p => p.items).filter(i => i.done).length} / {AUTOMATION_PHASES.flatMap(p => p.items).length}</div>
+                  <div className="text-xs text-gray-400">항목 완료</div>
+                </div>
+              </div>
+              <div className="mt-3 h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full bg-green-500 rounded-full transition-all"
+                  style={{ width: `${Math.round(AUTOMATION_PHASES.flatMap(p => p.items).filter(i => i.done).length / AUTOMATION_PHASES.flatMap(p => p.items).length * 100)}%` }} />
+              </div>
+            </div>
+
+            {AUTOMATION_PHASES.map((phase, pi) => (
+              <div key={pi} className={`border rounded-xl p-5 ${phase.color}`}>
+                <h3 className="font-semibold text-gray-800 mb-3">{phase.phase}</h3>
+                <div className="space-y-2">
+                  {phase.items.map((item, ii) => (
+                    <div key={ii} className="flex items-start gap-3 bg-white rounded-lg p-3 border border-white/60">
+                      <span className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${item.done ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                        {item.done ? '✓' : '○'}
+                      </span>
+                      <div>
+                        <p className={`text-sm font-medium ${item.done ? 'text-gray-900' : 'text-gray-400'}`}>{item.label}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
+                      </div>
+                      {item.done && (
+                        <span className={`ml-auto flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${phase.badge}`}>완료</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <h3 className="font-semibold text-gray-900 mb-3">⏰ 크론 스케줄 현황</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left text-xs text-gray-500 font-medium py-2 pr-3">서비스</th>
+                      <th className="text-left text-xs text-gray-500 font-medium py-2 pr-3">엔드포인트</th>
+                      <th className="text-left text-xs text-gray-500 font-medium py-2 pr-3">스케줄</th>
+                      <th className="text-left text-xs text-gray-500 font-medium py-2">설명</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {CRON_SCHEDULE.map((c, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="py-2 pr-3"><span className="text-xs font-medium text-gray-700 bg-gray-100 px-2 py-0.5 rounded">{c.service}</span></td>
+                        <td className="py-2 pr-3 font-mono text-xs text-blue-600">{c.path}</td>
+                        <td className="py-2 pr-3 text-xs text-gray-600 whitespace-nowrap">{c.schedule}</td>
+                        <td className="py-2 text-xs text-gray-500">{c.desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
