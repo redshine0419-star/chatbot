@@ -92,6 +92,44 @@ const CRON_SCHEDULE = [
   { service: 'AskHistory', path: '/api/cron/weak-era-alert', schedule: '매주 화 11:00 UTC', desc: '취약 시대 복습 알림 이메일' },
 ]
 
+const ENV_VARS: { service: string; color: string; vars: { name: string; desc: string; required: boolean }[] }[] = [
+  {
+    service: '공통 (4개 서비스 모두)',
+    color: 'bg-gray-50 border-gray-200',
+    vars: [
+      { name: 'TWITTER_API_KEY', desc: 'X(Twitter) OAuth 1.0a — Developer Portal에서 발급', required: true },
+      { name: 'TWITTER_API_SECRET', desc: 'X API Secret Key', required: true },
+      { name: 'TWITTER_ACCESS_TOKEN', desc: 'X Access Token (계정 연동)', required: true },
+      { name: 'TWITTER_ACCESS_TOKEN_SECRET', desc: 'X Access Token Secret', required: true },
+      { name: 'SLACK_WEBHOOK_URL', desc: '블로그 발행·월간리뷰·AdSense 리포트 알림', required: false },
+      { name: 'GSC_REFRESH_TOKEN', desc: 'Google OAuth Refresh Token — GA4 Data API 호출용 (AdSense 크론)', required: false },
+      { name: 'GA4_PROPERTY_ID', desc: 'GA4 Property ID (예: 123456789)', required: false },
+    ],
+  },
+  {
+    service: 'FlavorSync & AskHistory',
+    color: 'bg-orange-50 border-orange-200',
+    vars: [
+      { name: 'RESEND_API_KEY', desc: 'Resend 이메일 API — 개인화 추천·취약시대 알림 발송', required: true },
+    ],
+  },
+  {
+    service: '전체 서비스 (선택)',
+    color: 'bg-blue-50 border-blue-200',
+    vars: [
+      { name: 'ADSENSE_PUBLISHER_ID', desc: 'AdSense Publisher ID (예: pub-xxxxxxxxxx) — AdSense API 연동 시', required: false },
+      { name: 'ADSENSE_ACCESS_TOKEN', desc: 'AdSense API Access Token — 수익 자동 리포트', required: false },
+    ],
+  },
+  {
+    service: 'MarketerOps (saasclaude)',
+    color: 'bg-purple-50 border-purple-200',
+    vars: [
+      { name: 'CRON_SECRET', desc: '크론 인증 키 — 이미 설정됨', required: true },
+    ],
+  },
+]
+
 const TABS = [
   { key: 'status', label: '현황' },
   { key: 'automation', label: '마케팅 자동화' },
@@ -127,6 +165,8 @@ export default function DashboardPage() {
   const [briefing, setBriefing] = useState('')
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [speaking, setSpeaking] = useState(false)
+  const [cronCheck, setCronCheck] = useState<any>(null)
+  const [cronCheckLoading, setCronCheckLoading] = useState(false)
   const synthRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   const [costMonth, setCostMonth] = useState('')
@@ -227,6 +267,12 @@ export default function DashboardPage() {
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([ideas[serviceId] || ''], { type: 'text/plain' }))
     a.download = `${serviceId}-ideas.txt`; a.click()
+  }
+
+  async function runCronCheck() {
+    setCronCheckLoading(true)
+    try { setCronCheck(await (await fetch('/api/cron-check')).json()) }
+    finally { setCronCheckLoading(false) }
   }
 
   async function loadBriefing() {
@@ -363,7 +409,9 @@ export default function DashboardPage() {
             ))}
 
             <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <h3 className="font-semibold text-gray-900 mb-3">⏰ 크론 스케줄 현황</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-gray-900">⏰ 크론 스케줄 현황</h3>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -385,6 +433,79 @@ export default function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="font-semibold text-gray-900">🩺 서비스 헬스체크</h3>
+                  {cronCheck && <p className="text-xs text-gray-400 mt-0.5">마지막 확인: {new Date(cronCheck.checkedAt).toLocaleString('ko-KR')}</p>}
+                </div>
+                <button onClick={runCronCheck} disabled={cronCheckLoading}
+                  className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                  {cronCheckLoading ? '점검 중...' : '🔍 지금 점검'}
+                </button>
+              </div>
+              {!cronCheck && !cronCheckLoading && (
+                <p className="text-sm text-gray-400 text-center py-6">버튼을 누르면 4개 서비스 응답 상태를 실시간으로 확인합니다.</p>
+              )}
+              {cronCheckLoading && (
+                <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+                  <span className="animate-spin">⏳</span> 4개 서비스 응답 확인 중...
+                </div>
+              )}
+              {cronCheck && !cronCheckLoading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {cronCheck.results?.map((r: any) => (
+                    <div key={r.key} className={`rounded-lg border p-4 ${r.status === 'up' ? 'bg-green-50 border-green-200' : r.status === 'degraded' ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${r.status === 'up' ? 'bg-green-500' : r.status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                        <span className="font-medium text-sm text-gray-900">{r.name}</span>
+                        <span className={`ml-auto text-xs font-semibold ${r.status === 'up' ? 'text-green-700' : r.status === 'degraded' ? 'text-yellow-700' : 'text-red-700'}`}>
+                          {r.status === 'up' ? '정상' : r.status === 'degraded' ? '일부 오류' : '응답 없음'}
+                        </span>
+                        <span className="text-xs text-gray-400">{r.latency}ms</span>
+                      </div>
+                      <div className="space-y-1 text-xs text-gray-600">
+                        <div className="flex gap-4">
+                          <span>📝 블로그 <strong>{r.blogTotal ?? '-'}</strong>개</span>
+                          {r.emailSubscribers !== null && <span>📧 구독자 <strong>{r.emailSubscribers}</strong>명</span>}
+                        </div>
+                        {r.latestPostDate && (
+                          <div className="text-gray-400">최근 발행: {new Date(r.latestPostDate).toLocaleDateString('ko-KR')}</div>
+                        )}
+                        {r.error && <div className="text-red-500 text-xs mt-1 truncate">{r.error}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="font-semibold text-gray-900">🔑 Vercel 신규 환경변수 설정 가이드</h3>
+              {ENV_VARS.map((group, gi) => (
+                <div key={gi} className={`border rounded-xl p-5 ${group.color}`}>
+                  <h4 className="font-medium text-gray-800 mb-3 text-sm">{group.service}</h4>
+                  <div className="space-y-2">
+                    {group.vars.map((v, vi) => (
+                      <div key={vi} className="flex items-start gap-3 bg-white rounded-lg p-3 border border-white/70">
+                        <span className={`mt-0.5 flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded ${v.required ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                          {v.required ? '필수' : '선택'}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-mono text-xs font-semibold text-gray-900">{v.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{v.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                <strong>📌 설정 위치:</strong> Vercel 대시보드 → 각 프로젝트 → Settings → Environment Variables<br />
+                <span className="text-xs mt-1 block text-amber-600">Twitter API는 <a href="https://developer.twitter.com" target="_blank" className="underline">developer.twitter.com</a> → Free Basic Plan에서 발급. Resend는 <a href="https://resend.com" target="_blank" className="underline">resend.com</a> 무료 3,000건/월.</span>
               </div>
             </div>
           </div>
