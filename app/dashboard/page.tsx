@@ -232,6 +232,9 @@ export default function DashboardPage() {
                       <div className="grid grid-cols-2 gap-3 text-sm mb-4">
                         <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">전체 블로그</div><div className="font-bold text-lg">{d?.blog?.total ?? d?.totalPosts ?? '-'}</div></div>
                         <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">이번 주 신규</div><div className="font-bold text-lg">{d?.blog?.recentWeek ?? d?.weeklyPosts ?? '-'}</div></div>
+                        {typeof d?.emailSubscribers === 'number' && (
+                          <div className="bg-indigo-50 rounded-lg p-3"><div className="text-indigo-500 text-xs mb-1">📧 이메일 구독</div><div className="font-bold text-lg text-indigo-700">{d.emailSubscribers.toLocaleString()}</div></div>
+                        )}
                         {g && (<>
                           <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 사용자</div><div className="font-bold text-lg">{g.users?.toLocaleString()}</div></div>
                           <div className="bg-gray-50 rounded-lg p-3"><div className="text-gray-500 text-xs mb-1">GA4 7일 세션</div><div className="font-bold text-lg">{g.sessions?.toLocaleString()}</div></div>
