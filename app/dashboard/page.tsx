@@ -137,6 +137,7 @@ const TABS = [
   { key: 'ideas', label: '아이디어' },
   { key: 'arch', label: '비용·아키텍처' },
   { key: 'briefing', label: '모닝 브리핑' },
+  { key: 'feedback', label: '의견 게시판' },
 ] as const
 
 type TabKey = typeof TABS[number]['key']
@@ -758,6 +759,21 @@ export default function DashboardPage() {
                 <p className="text-xs text-gray-500"><span className="font-medium">특징:</span> {a.notes}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === 'feedback' && (
+          <div className="max-w-2xl">
+            <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
+              <p className="text-4xl mb-3">💬</p>
+              <h2 className="font-semibold text-gray-900 mb-2">사용자 의견 게시판</h2>
+              <p className="text-sm text-gray-500 mb-5">4개 서비스에 대한 의견·제안·버그 제보를 비회원 익명으로 남길 수 있습니다.<br />봇 방지 수학 캡차 + IP 레이트 리밋 적용.</p>
+              <a href="/feedback" target="_blank"
+                className="inline-block px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 text-sm">
+                게시판 열기 →
+              </a>
+              <p className="text-xs text-gray-400 mt-3">chatbot-mu-lac-59.vercel.app/feedback</p>
+            </div>
           </div>
         )}
 
