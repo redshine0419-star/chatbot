@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getGA4Token, saveGA4Token } from '@/lib/ga4-token';
+import { list } from '@vercel/blob';
 
 const GA4_PROPERTIES = [
   { key: 'marketerops', propertyId: '538101783', domain: 'growweb.me' },
@@ -7,6 +7,17 @@ const GA4_PROPERTIES = [
   { key: 'taskgrid', propertyId: '540455600', domain: 'taskgrid.my' },
   { key: 'askhistory', propertyId: '540450852', domain: 'askhistory.me' },
 ];
+
+async function getStoredToken() {
+  try {
+    const { blobs } = await list({ prefix: 'dashboard-ga4-token.json' });
+    if (blobs.length === 0) return null;
+    const res = await fetch(blobs[0].url, { cache: 'no-store' });
+    return res.ok ? res.json() : null;
+  } catch {
+    return null;
+  }
+}
 
 async function refreshAccessToken(refreshToken: string) {
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -31,7 +42,11 @@ async function fetchGA4Report(propertyId: string, accessToken: string) {
       body: JSON.stringify({
         dateRanges: [{ startDate: '7daysAgo', endDate: 'today' }],
         dimensions: [{ name: 'pagePath' }, { name: 'sessionDefaultChannelGroup' }],
-        metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'screenPageViews' }],
+        metrics: [
+          { name: 'sessions' },
+          { name: 'totalUsers' },
+          { name: 'screenPageViews' },
+        ],
         limit: 20,
       }),
     },
@@ -40,23 +55,22 @@ async function fetchGA4Report(propertyId: string, accessToken: string) {
 }
 
 export async function GET() {
-  const tokenData = await getGA4Token();
+  const tokenData = await getStoredToken();
   if (!tokenData) return NextResponse.json({ connected: false, data: [] });
 
-  let accessToken = tokenData.access_token as string;
-  const expiry = new Date(tokenData.savedAt as string).getTime() + ((tokenData.expires_in as number) ?? 3600) * 1000;
+  let accessToken = tokenData.access_token;
+  const expiry = new Date(tokenData.savedAt).getTime() + (tokenData.expires_in ?? 3600) * 1000;
   if (Date.now() > expiry - 300000 && tokenData.refresh_token) {
-    const refreshed = await refreshAccessToken(tokenData.refresh_token as string);
-    if (refreshed.access_token) {
-      accessToken = refreshed.access_token;
-      await saveGA4Token({ ...tokenData, access_token: accessToken, savedAt: new Date().toISOString() });
-    }
+    const refreshed = await refreshAccessToken(tokenData.refresh_token);
+    if (refreshed.access_token) accessToken = refreshed.access_token;
   }
 
   const results = await Promise.all(
     GA4_PROPERTIES.map(async (prop) => {
       const raw = await fetchGA4Report(prop.propertyId, accessToken);
-      if (!raw?.rows) return { property: prop.key, domain: prop.domain, sessions: 0, users: 0, pageViews: 0, topPages: [], channelBreakdown: [] };
+      if (!raw?.rows) {
+        return { property: prop.key, domain: prop.domain, sessions: 0, users: 0, pageViews: 0, topPages: [], channelBreakdown: [] };
+      }
       let sessions = 0, users = 0, pageViews = 0;
       const pageMap: Record<string, number> = {};
       const channelMap: Record<string, number> = {};
@@ -71,7 +85,9 @@ export async function GET() {
         channelMap[channel] = (channelMap[channel] ?? 0) + s;
       }
       return {
-        property: prop.key, domain: prop.domain, sessions, users, pageViews,
+        property: prop.key,
+        domain: prop.domain,
+        sessions, users, pageViews,
         topPages: Object.entries(pageMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([page, views]) => ({ page, views })),
         channelBreakdown: Object.entries(channelMap).sort((a, b) => b[1] - a[1]).map(([channel, s]) => ({ channel, sessions: s })),
       };

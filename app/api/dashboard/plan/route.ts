@@ -1,109 +1,56 @@
-import { NextResponse } from 'next/server'
-import { saveCycle, CycleTask } from '@/lib/cycle-store'
+import { NextResponse } from 'next/server';
 
 const SERVICES = [
-  { id: 'marketerops', name: 'MarketerOps.ai', url: 'https://growweb.me', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/marketerops` : null },
-  { id: 'flavorsync', name: 'FlavorSync', url: 'https://flavorsync.me', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/flavorsync` : null },
-  { id: 'taskgrid', name: 'TaskGrid', url: 'https://taskgrid.my', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/taskgrid` : null },
-  { id: 'askhistory', name: 'AskHistory', url: 'https://askhistory.me', statsUrl: process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL}/api/dashboard/stats/askhistory` : null },
-]
+  { key: 'marketerops', url: 'https://growweb.me/api/stats' },
+  { key: 'flavorsync', url: 'https://flavorsync.me/api/stats' },
+  { key: 'taskgrid', url: 'https://taskgrid.my/api/stats' },
+  { key: 'askhistory', url: 'https://askhistory.me/api/stats' },
+];
 
-async function fetchStats(url: string | null) {
-  if (!url) return null
+async function fetchStats(url: string) {
   try {
-    const res = await fetch(url, { cache: 'no-store' })
-    if (!res.ok) return null
-    return await res.json()
+    const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    return res.ok ? res.json() : null;
   } catch {
-    return null
+    return null;
   }
 }
 
 export async function POST() {
   try {
-    const statsResults = await Promise.allSettled(
-      SERVICES.map(s => fetchStats(s.statsUrl))
-    )
-    const statsContext = SERVICES.map((s, i) => {
-      const data = statsResults[i].status === 'fulfilled' ? statsResults[i].value : null
-      return `${s.name}: ${data ? JSON.stringify(data) : '데이터 없음'}`
-    }).join('\n')
+    const allStats = await Promise.all(SERVICES.map((s) => fetchStats(s.url)));
 
-    const geminiKey = process.env.GEMINI_API_KEY
-    if (!geminiKey) throw new Error('GEMINI_API_KEY not set')
+    const summary = SERVICES.map((s, i) => {
+      const data = allStats[i];
+      if (!data) return `${s.key}: 데이터 없음`;
+      return [
+        `[${s.key}] (${data.domain ?? s.key})`,
+        `  블로그 총 ${data.blog?.total ?? 0}개 / 이번 주 ${data.blog?.recentWeek ?? 0}개 신규`,
+        data.recipe ? `  레시피 총 ${data.recipe.total}개` : '',
+        data.blog?.recent?.length
+          ? `  최근 글: ${data.blog.recent.slice(0, 2).map((p: { title: string }) => p.title).join(', ')}`
+          : '',
+      ].filter(Boolean).join('\n');
+    }).join('\n\n');
 
-    const prompt = `SaaS PM으로서 4개 서비스 현황을 분석해 2주 액션 플랜을 JSON으로 반환하세요.
-
-현황:
-${statsContext}
-
-서비스: marketerops=SEO진단SaaS, flavorsync=레시피앱, taskgrid=칸반툴, askhistory=세계사학습
-
-JSON만 반환 (다른 텍스트 없음):
-{
-  "actions": [{
-    "service": "marketerops|flavorsync|taskgrid|askhistory",
-    "title": "제목(30자 이내)",
-    "body": "설명(100자 이내)",
-    "steps": ["단계1(50자)","단계2(50자)","단계3(50자)"],
-    "goal": "기대결과(80자 이내)"
-  }],
-  "twoWeekPlan": [같은 형식 8개],
-  "warnings": [같은 형식 2개]
-}
-
-규칙: actions=4개(서비스별1개), twoWeekPlan=8개(서비스별2개), warnings=2개. 한국어.`
+    const prompt = `당신은 데이터 기반 디지털 마케팅 전략가입니다.\n\n아래는 현재 운영 중인 4개 서비스의 현황입니다:\n\n${summary}\n\n위 데이터를 분석하여 다음을 작성해주세요:\n\n## 📊 현황 분석\n각 서비스의 콘텐츠 생산성과 성장세를 간략히 평가하세요.\n\n## 🎯 이번 주 핵심 액션 (3가지)\n가장 임팩트가 큰 구체적인 행동 방안을 제시하세요.\n\n## 📅 2주 플랜\n서비스별로 집중할 콘텐츠 전략을 제안하세요.\n\n## ⚠️ 주의 신호\n데이터에서 발견되는 문제점이나 리스크를 짚어주세요.\n\n간결하고 실행 가능한 언어로 작성해주세요.`;
 
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            maxOutputTokens: 8192,
-          },
         }),
-      }
-    )
+      },
+    );
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text()
-      throw new Error(`Gemini ${geminiRes.status}: ${errText.slice(0, 200)}`)
-    }
+    const geminiData = await geminiRes.json();
+    const plan = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '플랜 생성 실패';
 
-    const geminiData = await geminiRes.json()
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!rawText) throw new Error('Gemini returned empty response')
-
-    let plan: any
-    try {
-      plan = JSON.parse(rawText)
-    } catch (e: any) {
-      throw new Error(`JSON parse error: ${e.message}. Raw (first 500): ${rawText.slice(0, 500)}`)
-    }
-
-    const tasks: CycleTask[] = [
-      ...(plan.actions || []).map((a: any, i: number) => ({
-        id: `action-${i}`, service: a.service, title: a.title, body: a.body,
-        steps: a.steps || [], goal: a.goal || '', category: 'action' as const, done: false,
-      })),
-      ...(plan.twoWeekPlan || []).map((a: any, i: number) => ({
-        id: `plan-${i}`, service: a.service, title: a.title, body: a.body,
-        steps: a.steps || [], goal: a.goal || '', category: 'plan' as const, done: false,
-      })),
-      ...(plan.warnings || []).map((a: any, i: number) => ({
-        id: `warning-${i}`, service: a.service, title: a.title, body: a.body,
-        steps: a.steps || [], goal: a.goal || '', category: 'warning' as const, done: false,
-      })),
-    ]
-
-    const cycleId = await saveCycle(tasks)
-    return NextResponse.json({ cycleId, plan, tasks, generatedAt: new Date().toISOString() })
-  } catch (err: any) {
-    console.error('[plan] error:', err?.message || err)
-    return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 })
+    return NextResponse.json({ plan, generatedAt: new Date().toISOString() });
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 }
