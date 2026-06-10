@@ -37,7 +37,7 @@ export default function FeedbackPage() {
   const [formService, setFormService] = useState('marketerops')
   const [nickname, setNickname] = useState('')
   const [content, setContent] = useState('')
-  const [captcha, setCaptcha] = useState(makeCaptcha())
+  const [captcha, setCaptcha] = useState<{ question: string; answer: number } | null>(null)
   const [captchaAnswer, setCaptchaAnswer] = useState('')
   const [honeypot, setHoneypot] = useState('') // 봇 트랩
   const [submitting, setSubmitting] = useState(false)
@@ -56,6 +56,7 @@ export default function FeedbackPage() {
     } finally { setLoading(false) }
   }, [])
 
+  useEffect(() => { setCaptcha(makeCaptcha()) }, [])
   useEffect(() => { load(filter, page) }, [filter, page, load])
 
   function changeFilter(svc: string) {
@@ -75,7 +76,7 @@ export default function FeedbackPage() {
           service: formService,
           nickname: nickname.trim(),
           content: content.trim(),
-          captchaQuestion: captcha.question,
+          captchaQuestion: captcha?.question,
           captchaAnswer: Number(captchaAnswer),
           honeypot,
         }),
@@ -163,7 +164,7 @@ export default function FeedbackPage() {
 
             {/* 자동 입력 방지 캡차 */}
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">자동 입력 방지: <span className="font-mono font-bold text-gray-900">{captcha.question} = ?</span></label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">자동 입력 방지: <span className="font-mono font-bold text-gray-900">{captcha?.question ?? '...'} = ?</span></label>
               <input value={captchaAnswer} onChange={e => setCaptchaAnswer(e.target.value)} required
                 type="number" placeholder="답을 입력하세요"
                 className="w-32 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
